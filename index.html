@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>采药圃 · 跑酷</title>
+<style>
+  html,body{height:100%;margin:0}
+  body{
+    background:#f6f2e8;color:#2c342e;
+    font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+    display:flex;align-items:center;justify-content:center;padding:28px;
+  }
+  .card{max-width:420px;width:100%;text-align:center}
+  .seal{
+    width:56px;height:56px;margin:0 auto 22px;border:2px solid #b03a2e;border-radius:6px;
+    color:#b03a2e;font-size:15px;line-height:1.15;padding-top:9px;letter-spacing:2px;
+    font-family:"STKaiti","KaiTi",serif;
+  }
+  h1{
+    font-family:"STKaiti","KaiTi","Songti SC",serif;font-size:40px;margin:0 0 6px;
+    letter-spacing:.14em;
+  }
+  .sub{color:#5d675f;font-size:14px;letter-spacing:.08em;margin:0 0 34px}
+  .ok{
+    margin:0 auto;display:inline-block;background:#eef3ea;color:#3a6e4a;
+    border-radius:999px;padding:7px 16px;font-size:14px;
+  }
+  .note{margin:26px 0 0;color:#8a9187;font-size:13px;line-height:1.9}
+  .rule{height:3px;border-top:3px double #b03a2e;margin:30px 0 22px}
+  .meta{display:flex;justify-content:space-between;color:#a8a196;font-size:12px;letter-spacing:.05em}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="seal">采药</div>
+    <h1>药圃跑酷</h1>
+    <p class="sub">第三关 · 线上小游戏</p>
+    <div class="ok">页面已上线，手机可正常打开</div>
+    <div class="rule"></div>
+    <p class="note">
+      游戏本体还在制作中。<br>
+      看到这一页，说明二维码、域名、https 都通了。
+    </p>
+    <div class="meta">
+      <span>采药圃 · 内测</span>
+      <span id="v">v0</span>
+    </div>
+  </div>
+<script>
+  document.getElementById('v').textContent = 'v0 · ' + new Date().toISOString().slice(0, 10);
+</script>
+</body>
+</html>
