@@ -91,7 +91,7 @@
    ============================================================ */
 
 const CFG = {
-  threshold: 900,         // 抽奖门槛分（总分 = 米数 + 药材分）
+  threshold: 1000,        // 抽奖门槛分（总分 = 米数 + 药材分）
   lives: 3,               // 挑战模式命数
   livesEndless: 5,        // 无尽模式命数
   boosts: 2,              // 每局冲刺次数
@@ -104,12 +104,12 @@ const CFG = {
   speedStep: 0.08,        // 每 speedEvery 秒 +8%
   speedEvery: 10,
   speedCap: 1.6,
-  herbEvery: 0.82,        // 药材生成间隔（秒）
-  herbEveryMin: 0.55,
-  rockEvery: 1.5,         // 障碍生成间隔（秒）
-  rockEveryMin: 0.78,
+  herbEvery: 0.70,        // 药材生成间隔（秒）
+  herbEveryMin: 0.45,
+  rockEvery: 1.65,        // 障碍生成间隔（秒）
+  rockEveryMin: 0.85,
   chaseStart: 45,         // 第几秒放狗
-  chaseAdvance: 0.015,    // 追兵每秒自然逼近量（×当前速度）
+  chaseAdvance: 0.020,    // 追兵每秒自然逼近量（×当前速度）
   chaseOnHit: 22,         // 撞一次障碍，狗额外逼近多少像素
   chaseOnBoost: 30,       // 冲刺一次，把狗甩开多少像素
   pxPerMeter: 0.052,      // 多少屏幕高算 1 米
@@ -122,7 +122,7 @@ const HERBS = [
   { name: "薄荷", pts: 10, kind: "leaf",   color: "#5c9a52" },
   { name: "黄芪", pts: 10, kind: "root",   color: "#c9a227" },
   { name: "甘草", pts: 10, kind: "stick",  color: "#b08a5a" },
-  { name: "陈皮", pts: 10, kind: "peel",   color: "#d98324" },
+  { name: "菊花", pts: 10, kind: "flower", color: "#e8b33a" },
   { name: "灵芝", pts: 50, kind: "fungus", color: "#8c3a2e", rare: true },
   { name: "人参", pts: 50, kind: "ginseng",color: "#e0cfa8", rare: true },
 ];
@@ -143,6 +143,9 @@ function resize() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   const w = Math.min(W, STAGE_MAX);
   ST.w = w; ST.x = Math.round((W - w) / 2);
+  // 只有宽度变了才重铺瓦片：手机上地址栏收起会频繁触发 resize（只变高度），
+  // 不加这个判断每次都会重建整张地面，反而卡顿。
+  if (w !== tileW) { tileW = w; groundTile = null; hudGrad = null; }
   if (G.player) G.player.y = Math.round(H * 0.30);
 }
 window.addEventListener("resize", resize);
@@ -216,49 +219,67 @@ function roundRect(x, y, w, h, r) {
 const INK = "#2c342e";
 function ink(w = 3) { ctx.strokeStyle = INK; ctx.lineWidth = w; ctx.lineJoin = "round"; ctx.lineCap = "round"; }
 
-/* ---------- 地面 ---------- */
+/* ---------- 地面 ----------
+   性能要点：田垄不再每帧现画路径，而是预渲染成一张「瓦片」，
+   每帧只做 3~4 次 drawImage。scroll 也对瓦片高度取模，
+   所以跑多久都不会变慢（旧版循环随 scroll 增长，越跑越卡）。
+*/
 const BAND = 104;
-function drawGround() {
-  // 底色
-  ctx.fillStyle = "#eef3e2";
-  ctx.fillRect(0, 0, ST.w, H);
-  const P = H + BAND * 2;
-  const base = Math.floor(G.scroll / BAND);
-  for (let k = -1; k <= base + Math.ceil(H / BAND) + 2; k++) {
-    // 每条田垄在世界坐标 k*BAND，随 scroll 向上移动
-    let y = ((k * BAND - G.scroll) % P + P) % P - BAND;
-    if (y < -BAND || y > H + BAND) continue;
-    const dark = (k % 2 === 0);
-    // 垄面
-    ctx.fillStyle = dark ? "#e2ecd2" : "#eaf1dd";
-    ctx.fillRect(0, y, ST.w, BAND);
+const BANDS_PER_TILE = 6;
+const TILE_H = BAND * BANDS_PER_TILE;
+let groundTile = null;
+let tileW = -1;
+
+function grassOn(g, x, y, s) {
+  g.save(); g.translate(x, y); g.scale(s, s);
+  g.strokeStyle = "rgba(112,146,96,.55)"; g.lineWidth = 2.2; g.lineCap = "round";
+  for (const a of [-0.5, 0, 0.5]) {
+    g.beginPath(); g.moveTo(0, 4);
+    g.quadraticCurveTo(a * 8, -3, a * 13, -10);
+    g.stroke();
+  }
+  g.restore();
+}
+
+function buildGroundTile() {
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(ST.w * DPR));
+  c.height = Math.max(1, Math.round(TILE_H * DPR));
+  const g = c.getContext("2d");
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g.fillStyle = "#eef3e2"; g.fillRect(0, 0, ST.w, TILE_H);
+  for (let i = 0; i < BANDS_PER_TILE; i++) {
+    const y = i * BAND;
+    g.fillStyle = (i % 2 === 0) ? "#e2ecd2" : "#eaf1dd";
+    g.fillRect(0, y, ST.w, BAND);
     // 垄沟
-    ink(2.5); ctx.strokeStyle = "rgba(120,140,110,.35)";
-    ctx.beginPath();
+    g.strokeStyle = "rgba(120,140,110,.35)"; g.lineWidth = 2.5;
+    g.lineCap = "round"; g.lineJoin = "round";
+    g.beginPath();
     for (let x = -10; x <= ST.w + 10; x += 26) {
-      const yy = y + 4 + Math.sin((x + k * 37) * 0.045) * 3;
-      x === -10 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+      const yy = y + 4 + Math.sin((x + i * 37) * 0.045) * 3;
+      x === -10 ? g.moveTo(x, yy) : g.lineTo(x, yy);
     }
-    ctx.stroke();
+    g.stroke();
     // 垄上的杂草（只做质感，不描边，避免和药材混淆）
-    const sx = ((k * 137) % Math.max(40, ST.w - 80)) + 40;
-    const sx2 = ST.w - sx;
-    grass(sx, y + BAND * 0.62, 0.9 + ((k * 7) % 3) * 0.12);
-    grass(sx2, y + BAND * 0.28, 0.85 + ((k * 5) % 3) * 0.1);
+    const span = Math.max(20, ST.w - 80);
+    const r1 = ((i * 137) % 97) / 97, r2 = ((i * 61) % 89) / 89;
+    grassOn(g, 40 + r1 * span, y + BAND * 0.62, 0.9 + ((i * 7) % 3) * 0.12);
+    grassOn(g, 40 + r2 * span, y + BAND * 0.28, 0.85 + ((i * 5) % 3) * 0.1);
   }
   // 两侧田埂（石边），让画面有边界
-  ctx.fillStyle = "rgba(196,186,164,.5)";
-  ctx.fillRect(0, 0, 10, H); ctx.fillRect(ST.w - 10, 0, 10, H);
+  g.fillStyle = "rgba(196,186,164,.5)";
+  g.fillRect(0, 0, 10, TILE_H); g.fillRect(ST.w - 10, 0, 10, TILE_H);
+  groundTile = c;
 }
-function grass(x, y, s) {
-  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
-  ctx.strokeStyle = "rgba(112,146,96,.55)"; ctx.lineWidth = 2.2; ctx.lineCap = "round";
-  for (const a of [-0.5, 0, 0.5]) {
-    ctx.beginPath(); ctx.moveTo(0, 4);
-    ctx.quadraticCurveTo(a * 8, -3, a * 13, -10);
-    ctx.stroke();
+
+function drawGround() {
+  if (!groundTile) buildGroundTile();
+  const off = ((G.scroll % TILE_H) + TILE_H) % TILE_H;
+  // 每帧只需要 2~3 次 drawImage，且数量与跑了多久无关
+  for (let y = -off; y < H; y += TILE_H) {
+    ctx.drawImage(groundTile, 0, y, ST.w, TILE_H);
   }
-  ctx.restore();
 }
 
 /* ---------- 主角（背身、朝下跑） ---------- */
@@ -369,11 +390,16 @@ function herbArt(o, art) {
       }
       ink(2.6);
       break;
-    case "peel": // 陈皮：卷起的橘皮
+    case "flower": // 菊花：一圈花瓣
       ctx.fillStyle = c.color;
-      ctx.beginPath();
-      ctx.arc(0, 0, 11, 0.6, 5.2); ctx.arc(0, 0, 4, 5.0, 0.8, true);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4;
+        ctx.save(); ctx.rotate(a);
+        ctx.beginPath(); ctx.ellipse(0, -8, 3.4, 6.2, 0, 0, 7); ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+      ctx.fillStyle = "#c98a2e";
+      ctx.beginPath(); ctx.arc(0, 0, 3.4, 0, 7); ctx.fill(); ctx.stroke();
       break;
     case "fungus": // 灵芝：扇形菌盖
       ctx.fillStyle = c.color;
@@ -466,6 +492,9 @@ function drawChase() {
 }
 
 /* ---------- HUD ---------- */
+let hudGrad = null;
+let dangerGrad = null, dangerGradStep = -1;
+let boostEl = null, boostNumEl = null, boostLast = "-";
 function heart(x, y, full, s = 1) {
   ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
   ctx.beginPath();
@@ -479,11 +508,13 @@ function heart(x, y, full, s = 1) {
 }
 function drawHUD() {
   const top = 18;
-  // 顶部压一层浅色渐变，保证 HUD 在田地上也看得清
-  const grd = ctx.createLinearGradient(0, 0, 0, top + 74);
-  grd.addColorStop(0, "rgba(250,247,240,.92)");
-  grd.addColorStop(1, "rgba(250,247,240,0)");
-  ctx.fillStyle = grd; ctx.fillRect(0, 0, ST.w, top + 74);
+  // 顶部压一层浅色渐变，保证 HUD 在田地上也看得清（渐变对象缓存，不每帧新建）
+  if (!hudGrad) {
+    hudGrad = ctx.createLinearGradient(0, 0, 0, top + 74);
+    hudGrad.addColorStop(0, "rgba(250,247,240,.92)");
+    hudGrad.addColorStop(1, "rgba(250,247,240,0)");
+  }
+  ctx.fillStyle = hudGrad; ctx.fillRect(0, 0, ST.w, top + 74);
   // 命
   for (let i = 0; i < Math.max(G.lives, 0); i++) heart(28 + i * 26, top + 12, true);
   if (G.mode === "challenge") for (let i = G.lives; i < CFG.lives; i++) heart(28 + i * 26, top + 12, false);
@@ -491,6 +522,15 @@ function drawHUD() {
   ctx.font = "600 20px system-ui,sans-serif"; ctx.textAlign = "center";
   ctx.fillStyle = INK;
   ctx.fillText(Math.floor(G.meters) + " m", ST.w / 2, top + 22);
+  // 门槛进度条：让玩家随时知道离抽奖还差多远
+  if (G.mode === "challenge") {
+    const sc = Math.floor(G.meters) + G.herbPts;
+    const prog = clamp(sc / CFG.threshold, 0, 1);
+    const bw = 100, bx = ST.w / 2 - bw / 2, by = top + 30;
+    ctx.fillStyle = "rgba(44,52,46,.13)"; roundRect(bx, by, bw, 5, 3); ctx.fill();
+    ctx.fillStyle = prog >= 1 ? "#3a6e4a" : "#d98324";
+    roundRect(bx, by, Math.max(2, bw * prog), 5, 3); ctx.fill();
+  }
   // 药材数
   ctx.textAlign = "left";
   ctx.font = "600 14px system-ui,sans-serif";
@@ -610,9 +650,16 @@ function doBoost() {
   sfx.boost(); updateBoostBtn();
 }
 function updateBoostBtn() {
-  const b = document.getElementById("boost");
-  b.querySelector("b").textContent = "×" + G.boosts;
-  b.classList.toggle("off", G.boosts <= 0 || G.boostT > 0);
+  // 每帧都被调用：只有数值变了才碰 DOM，否则会一直触发样式重算拖慢帧率
+  if (!boostEl) {
+    boostEl = document.getElementById("boost");
+    boostNumEl = boostEl.querySelector("b");
+  }
+  const key = G.boosts + "/" + (G.boostT > 0 ? 1 : 0);
+  if (key === boostLast) return;
+  boostLast = key;
+  boostNumEl.textContent = "×" + G.boosts;
+  boostEl.classList.toggle("off", G.boosts <= 0 || G.boostT > 0);
 }
 document.getElementById("boost").addEventListener("pointerdown", e => {
   e.stopPropagation(); doBoost();
@@ -638,12 +685,23 @@ document.addEventListener("visibilitychange", () => {
 
 /* ---------- 主循环 ---------- */
 let last = performance.now();
+const FPSDBG = new URLSearchParams(location.search).get("fps") === "1";
+let fpsAcc = 0, fpsN = 0;
 function loop(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const raw = (now - last) / 1000;
+  const dt = Math.min(raw, 0.05);
   last = now;
   if (G.state === "play") update(dt);
   else { G.player.phase += dt * 2; }
   render();
+  if (FPSDBG) {   // 真机自检：地址加 ?fps=1，标题栏显示实时帧率
+    fpsAcc += raw; fpsN++;
+    if (fpsAcc >= 1) {
+      document.title = "fps=" + (fpsN / fpsAcc).toFixed(1)
+        + " objs=" + G.objs.length + " m=" + Math.floor(G.meters);
+      fpsAcc = 0; fpsN = 0;
+    }
+  }
   requestAnimationFrame(loop);
 }
 
@@ -659,7 +717,7 @@ function update(dt) {
   G.inv = Math.max(0, G.inv - dt);
 
   // 位移
-  G.scroll += sp * dt;
+  G.scroll = (G.scroll + sp * dt) % TILE_H;   // 防止 Scroll 无限增长
   G.meters += sp * dt / (CFG.pxPerMeter * H);
 
   // 键盘控制
@@ -733,7 +791,7 @@ function render() {
 
   drawGround();
   // 物件按 y 排序，远的先画
-  const list = G.objs.slice().sort((a, b) => a.y - b.y);
+  const list = G.objs.sort((a, b) => a.y - b.y);   // 原地排序，不每帧新建数组
   for (const o of list) {
     if (o.type === "herb") {
       const bob = Math.sin(G.t * 2.4 + o.seed) * 2.5;
@@ -758,10 +816,14 @@ function render() {
     // 狗越来越近时，屏幕上方泛红提示
     const danger = clamp(1 - (G.player.y - G.chase.y) / 230, 0, 1);
     if (danger > 0.05) {
-      const g2 = ctx.createLinearGradient(0, 0, 0, 240);
-      g2.addColorStop(0, "rgba(176,58,46," + (0.34 * danger).toFixed(3) + ")");
-      g2.addColorStop(1, "rgba(176,58,46,0)");
-      ctx.fillStyle = g2; ctx.fillRect(0, 0, ST.w, 240);
+      const step = Math.round(danger * 20) / 20;   // 量化后再缓存，避免每帧新建渐变
+      if (!dangerGrad || dangerGradStep !== step) {
+        dangerGradStep = step;
+        dangerGrad = ctx.createLinearGradient(0, 0, 0, 240);
+        dangerGrad.addColorStop(0, "rgba(176,58,46," + (0.34 * step).toFixed(3) + ")");
+        dangerGrad.addColorStop(1, "rgba(176,58,46,0)");
+      }
+      ctx.fillStyle = dangerGrad; ctx.fillRect(0, 0, ST.w, 240);
     }
   }
 
@@ -842,6 +904,11 @@ requestAnimationFrame(t => { last = t; loop(t); });
 </script>
 </body>
 </html>
+
+
+
+
+
 
 
 
