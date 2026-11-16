@@ -55,12 +55,12 @@
 <div id="menu" class="screen">
   <p class="kicker">活动第三关</p>
   <h1>药圃跑酷</h1>
-  <p class="sub">点屏幕左右走位，收药材，别撞石头。<br>45 秒后园丁放狗追你。</p>
+  <p class="sub">按住屏幕左右转向，收药材，别撞石头。<br>45 秒后园丁放狗追你。</p>
   <div class="btns">
     <button class="main" data-mode="challenge">开始采药</button>
     <button class="ghost" data-mode="endless">无尽模式</button>
   </div>
-  <p class="tips">手机：手指点/拖左右　·　电脑：←→ 或 A/D<br>冲刺：空格 / F / 右下按钮</p>
+  <p class="tips">手机：按住屏幕左半/右半转向　·　电脑：按住 ←→ 或 A/D<br>冲刺：空格 / F / 右下按钮</p>
 </div>
 
 <div id="over" class="screen hidden">
@@ -97,6 +97,8 @@ const CFG = {
   boosts: 2,              // 每局冲刺次数
   boostTime: 3.0,         // 单次冲刺时长（秒）
   boostMul: 1.6,          // 冲刺速度倍率
+  lateralSpeed: 1.55,     // 横向转向速度：每秒走过 1.55 个屏宽
+  playPad: 26,            // 玩家左右能到的最边缘（也是物件生成的最边缘）
   hurtSlow: 0.55,         // 撞击后减速倍率
   hurtSlowTime: 0.45,
   invincible: 1.2,        // 撞击后无敌时间
@@ -109,9 +111,9 @@ const CFG = {
   rockEvery: 1.65,        // 障碍生成间隔（秒）
   rockEveryMin: 0.85,
   chaseStart: 45,         // 第几秒放狗
-  chaseAdvance: 0.020,    // 追兵每秒自然逼近量（×当前速度）
-  chaseOnHit: 22,         // 撞一次障碍，狗额外逼近多少像素
-  chaseOnBoost: 30,       // 冲刺一次，把狗甩开多少像素
+  chaseSpeed: 1.03,       // 狗自己的速度 = 玩家当前基础速度 × 这个（与冲刺无关）
+  chaseRamp: 0.003,       // 狗每秒再凶一点
+  chaseMaxUp: -170,       // 被冲刺甩开时最多退到多高
   pxPerMeter: 0.052,      // 多少屏幕高算 1 米
   lanes: 5,               // 生成时对齐的列数
 };
@@ -130,13 +132,24 @@ const ROCKS = ["rock", "fence", "scarecrow", "bucket"];
 
 /* ---------- 画布与舞台 ---------- */
 const cv = document.getElementById("c");
-const ctx = cv.getContext("2d");
+let ctx = cv.getContext("2d");
+const PIXEL_BUDGET = 1150000;        // 画布最多画多少设备像素
+let quality = 1;                     // 自适应画质：1 = 满，低了就少画像素
+let qualityStrikes = 0;              // 已经降过几档
+function computeDPR() {
+  const cssPx = Math.max(1, window.innerWidth * window.innerHeight);
+  const budget = Math.sqrt(PIXEL_BUDGET / cssPx);
+  const base = Math.max(1, Math.min(window.devicePixelRatio || 1, 2, budget));
+  // 手机上真正的开销是「每帧要填多少像素」，不是我的绘制代码；
+  // 所以性能不够时最有效的手段就是把渲染分辨率往下压。
+  return Math.max(0.7, base * quality);
+}
 let DPR = 1, W = 0, H = 0;          // 视口
 let ST = { x: 0, w: 0 };            // 舞台（桌面端居中收窄）
 const STAGE_MAX = 560;
 
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  DPR = computeDPR();
   W = window.innerWidth; H = window.innerHeight;
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   cv.style.width = W + "px"; cv.style.height = H + "px";
@@ -145,7 +158,7 @@ function resize() {
   ST.w = w; ST.x = Math.round((W - w) / 2);
   // 只有宽度变了才重铺瓦片：手机上地址栏收起会频繁触发 resize（只变高度），
   // 不加这个判断每次都会重建整张地面，反而卡顿。
-  if (w !== tileW) { tileW = w; groundTile = null; hudGrad = null; }
+  if (w !== tileW) { tileW = w; groundTile = null; hudGrad = null; sprites.clear(); }
   if (G.player) G.player.y = Math.round(H * 0.30);
 }
 window.addEventListener("resize", resize);
@@ -193,9 +206,10 @@ const G = {
   spawnRockT: 0.9,
   objs: [],             // 地上物件 {x,y,type,...}
   fx: [],               // 飘字
-  player: { x: 0, y: 0, tx: 0, r: 24, phase: 0 },
+  player: { x: 0, y: 0, dir: 0, r: 24, phase: 0 },
   chase: { on: false, y: -200, dogPhase: 0 },
   warned: false,
+  fps: 60,
 };
 
 /* ---------- 工具 ---------- */
@@ -204,8 +218,11 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const pick = arr => arr[(Math.random() * arr.length) | 0];
 function lerp(a, b, k) { return a + (b - a) * k; }
 function laneX(i) {
-  const pad = 46;
-  return pad + (ST.w - pad * 2) * (i + 0.5) / CFG.lanes;
+  // 生成点铺满「玩家能到的整个横向范围」，包括最左最右。
+  // 旧版只在中间缩进一圈，玩家贴边就永远撞不到东西。
+  const p = CFG.playPad;
+  const n = Math.max(1, CFG.lanes - 1);
+  return p + (ST.w - p * 2) * (i / n);
 }
 function roundRect(x, y, w, h, r) {
   ctx.beginPath();
@@ -275,17 +292,47 @@ function buildGroundTile() {
 
 function drawGround() {
   if (!groundTile) buildGroundTile();
-  const off = ((G.scroll % TILE_H) + TILE_H) % TILE_H;
+  // 对齐到整数像素：亚像素贴图会走重采样，比 1:1 拷贝慢好几倍
+  const off = Math.floor(((G.scroll % TILE_H) + TILE_H) % TILE_H);
   // 每帧只需要 2~3 次 drawImage，且数量与跑了多久无关
   for (let y = -off; y < H; y += TILE_H) {
     ctx.drawImage(groundTile, 0, y, ST.w, TILE_H);
   }
 }
 
+/* ---------- 贴图缓存 ----------
+   药材、障碍的形状每帧现画（几十条路径 + 描边），在手机上是最贵的一块。
+   这里各画一次存成小贴图，之后每帧只 drawImage。
+*/
+const SPRITE = 84;                 // 贴图边长（CSS px）
+const sprites = new Map();
+
+function makeSprite(key, draw) {
+  const c = document.createElement("canvas");
+  c.width = Math.round(SPRITE * DPR); c.height = Math.round(SPRITE * DPR);
+  const g = c.getContext("2d");
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g.translate(SPRITE / 2, SPRITE / 2);   // 图形以中心为原点
+  const save = ctx; ctx = g;
+  try { draw(); } finally { ctx = save; }
+  sprites.set(key, c);
+  return c;
+}
+function herbSprite(data) {
+  const key = "h:" + data.name;
+  return sprites.get(key) || makeSprite(key,
+    () => herbArt({ x: 0, y: 0, data, seed: 0 }, { s: data.rare ? 1.2 : 1.02 }));
+}
+function rockSprite(type) {
+  const key = "r:" + type;
+  return sprites.get(key) || makeSprite(key,
+    () => rockArt({ x: 0, y: 0, data: { type } }));
+}
+
 /* ---------- 主角（背身、朝下跑） ---------- */
 function drawPlayer() {
   const P = G.player;
-  const moving = Math.abs(P.tx - P.x) > 1.5;
+  const moving = (P.dir || 0) !== 0;
   P.phase += (moving ? 0.28 : 0.2);
   const sw = Math.sin(P.phase) * (moving ? 7 : 4);
   const bob = Math.abs(Math.sin(P.phase)) * 2;
@@ -538,6 +585,12 @@ function drawHUD() {
   ctx.fillText("药材 " + G.herbs, 22, top + 52);
   ctx.textAlign = "right";
   if (G.boostT > 0) { ctx.fillStyle = "#d98324"; ctx.fillText("加速中", ST.w - 22, top + 52); }
+  if (FPSDBG) {
+    ctx.textAlign = "left"; ctx.font = "700 12px system-ui,sans-serif";
+    ctx.fillStyle = G.fps >= 50 ? "#3a6e4a" : (G.fps >= 40 ? "#d98324" : "#b03a2e");
+    ctx.fillText("FPS " + G.fps.toFixed(0) + "  DPR " + DPR.toFixed(2) + "  物件 " + G.objs.length,
+      12, H - 12);
+  }
   if (AUTO) {
     ctx.textAlign = "left"; ctx.font = "600 12px system-ui,sans-serif"; ctx.fillStyle = "#b03a2e";
     ctx.fillText("AUTO " + Math.floor(G.meters) + "m +" + G.herbPts + " = "
@@ -579,7 +632,7 @@ function start(mode) {
   G.objs.length = 0; G.fx.length = 0;
   G.chase = { on: false, y: -160, dogPhase: 0 };
   G.warned = false;
-  G.player.x = ST.w / 2; G.player.tx = ST.w / 2; G.player.y = Math.round(H * 0.30);
+  G.player.x = ST.w / 2; G.player.dir = 0; G.player.y = Math.round(H * 0.30);
   document.getElementById("menu").classList.add("hidden");
   document.getElementById("over").classList.add("hidden");
   document.getElementById("pause").classList.add("hidden");
@@ -614,23 +667,27 @@ function gameOver(caught) {
   document.getElementById("over").classList.remove("hidden");
 }
 
-/* ---------- 输入 ---------- */
-function stageX(clientX) { return clamp(clientX - ST.x, 16, ST.w - 16); }
-let dragging = false, lastTap = 0;
+/* ---------- 输入 ----------
+   转向 = 一直按住改变方向（左半屏 / 右半屏），横移速度恒定。
+   参考游戏也是这样：只能改方向，不能瞬移到点击位置。
+*/
+let dragging = false, lastTap = 0, steerDir = 0;
+function sideOf(clientX) { return clientX < ST.x + ST.w / 2 ? -1 : 1; }
 cv.addEventListener("pointerdown", e => {
   audioReady();
   if (G.state !== "play") return;
   dragging = true;
-  G.player.tx = stageX(e.clientX);
+  steerDir = sideOf(e.clientX);
   const now = performance.now();
   if (now - lastTap < 280) { doBoost(); lastTap = 0; } else lastTap = now;
 });
 cv.addEventListener("pointermove", e => {
   if (G.state !== "play" || !dragging) return;
-  G.player.tx = stageX(e.clientX);
+  steerDir = sideOf(e.clientX);
 });
-window.addEventListener("pointerup", () => { dragging = false; });
-window.addEventListener("pointercancel", () => { dragging = false; });
+function endSteer() { dragging = false; steerDir = 0; }
+window.addEventListener("pointerup", endSteer);
+window.addEventListener("pointercancel", endSteer);
 
 const keys = {};
 window.addEventListener("keydown", e => {
@@ -646,7 +703,6 @@ window.addEventListener("keyup", e => { keys[e.key] = false; });
 function doBoost() {
   if (G.state !== "play" || G.boosts <= 0 || G.boostT > 0) return;
   G.boosts--; G.boostT = CFG.boostTime;
-  if (G.chase.on) G.chase.y = Math.max(-200, G.chase.y - CFG.chaseOnBoost);
   sfx.boost(); updateBoostBtn();
 }
 function updateBoostBtn() {
@@ -685,7 +741,32 @@ document.addEventListener("visibilitychange", () => {
 
 /* ---------- 主循环 ---------- */
 let last = performance.now();
+let qAcc = 0, qN = 0;
+
+// 降一档画质（重建瓦片和贴图，之后按新分辨率走）
+function degradeQuality() {
+  if (qualityStrikes >= 3) return;
+  qualityStrikes++;
+  quality *= 0.8;
+  groundTile = null; hudGrad = null; sprites.clear();
+  resize();
+  if (window.__prof) window.__prof.degraded = qualityStrikes;
+}
 const FPSDBG = new URLSearchParams(location.search).get("fps") === "1";
+// ?prof=1 —— 分项计时，配合 CDP 读取 window.__prof（开发用）
+const PROF = new URLSearchParams(location.search).get("prof") === "1";
+if (PROF) {
+  window.__prof = { frames: 0, total: 0, draw: 0, ground: 0, player: 0, hud: 0, chase: 0 };
+  const wrapTiming = (key, fn) => function () {
+    const t0 = performance.now();
+    try { return fn.apply(this, arguments); }
+    finally { window.__prof[key] += performance.now() - t0; }
+  };
+  drawGround = wrapTiming("ground", drawGround);
+  drawPlayer = wrapTiming("player", drawPlayer);
+  drawHUD = wrapTiming("hud", drawHUD);
+  drawChase = wrapTiming("chase", drawChase);
+}
 let fpsAcc = 0, fpsN = 0;
 function loop(now) {
   const raw = (now - last) / 1000;
@@ -693,11 +774,22 @@ function loop(now) {
   last = now;
   if (G.state === "play") update(dt);
   else { G.player.phase += dt * 2; }
+  const tRender = PROF ? performance.now() : 0;
   render();
+  if (PROF) { window.__prof.draw += performance.now() - tRender; window.__prof.frames++; window.__prof.total += raw * 1000; }
+  // 自适应画质：每 1.5 秒看一次真实帧率，不够就降分辨率，最多降三档
+  if (G.state === "play" && qualityStrikes < 3) {
+    qAcc += raw; qN++;
+    if (qAcc >= 1.5) {
+      if (qN / qAcc < 50) degradeQuality();
+      qAcc = 0; qN = 0;
+    }
+  }
   if (FPSDBG) {   // 真机自检：地址加 ?fps=1，标题栏显示实时帧率
     fpsAcc += raw; fpsN++;
     if (fpsAcc >= 1) {
-      document.title = "fps=" + (fpsN / fpsAcc).toFixed(1)
+      G.fps = fpsN / fpsAcc;
+      document.title = "fps=" + G.fps.toFixed(1)
         + " objs=" + G.objs.length + " m=" + Math.floor(G.meters);
       fpsAcc = 0; fpsN = 0;
     }
@@ -720,10 +812,17 @@ function update(dt) {
   G.scroll = (G.scroll + sp * dt) % TILE_H;   // 防止 Scroll 无限增长
   G.meters += sp * dt / (CFG.pxPerMeter * H);
 
-  // 键盘控制
+  // 转向：按住才改变方向，横移速度恒定
   const kx = (keys.ArrowRight || keys.d || keys.D ? 1 : 0) - (keys.ArrowLeft || keys.a || keys.A ? 1 : 0);
-  if (kx) G.player.tx = clamp(G.player.tx + kx * H * 0.9 * dt, 18, ST.w - 18);
-  G.player.x = lerp(G.player.x, G.player.tx, 1 - Math.pow(0.0009, dt));
+  let dir = kx || steerDir;
+  if (AUTO && autoTargetX != null) {
+    dir = Math.abs(autoTargetX - G.player.x) < 5 ? 0 : Math.sign(autoTargetX - G.player.x);
+  }
+  G.player.dir = dir;
+  if (dir) {
+    G.player.x = clamp(G.player.x + dir * CFG.lateralSpeed * ST.w * dt,
+      CFG.playPad, ST.w - CFG.playPad);
+  }
 
   // 生成
   G.spawnHerbT -= dt;
@@ -749,7 +848,6 @@ function update(dt) {
       G.objs.splice(i, 1);
     } else if (G.inv <= 0) {
       G.lives--; G.inv = CFG.invincible; G.slowT = CFG.hurtSlowTime;
-      if (G.chase.on) G.chase.y += CFG.chaseOnHit;   // 失误一次，狗咬得更近
       G.shake = 12; sfx.hit();
       G.fx.push({ x: o.x, y: o.y, txt: "-1", life: 0.9, color: "#b03a2e" });
       if (G.mode === "challenge" && G.lives <= 0) { gameOver(false); return; }
@@ -764,7 +862,11 @@ function update(dt) {
       if (G.mode === "challenge") toast("园丁放狗了！快跑");
     }
     if (G.chase.on) {
-      G.chase.y += sp * CFG.chaseAdvance * dt;
+      // 狗跑自己的速度：跟玩家「基础速度」走，和冲刺/减速无关。
+      // 玩家冲刺时 sp 变大，(dogSp - sp) 变负，距离才真的拉得开。
+      const dogSp = CFG.baseSpeed * H * ramp
+        * (CFG.chaseSpeed + CFG.chaseRamp * (G.t - CFG.chaseStart));
+      G.chase.y = Math.max(CFG.chaseMaxUp, G.chase.y + (dogSp - sp) * dt);
       if (G.chase.y > P.y - 26) { gameOver(true); return; }
     }
   }
@@ -782,17 +884,24 @@ function update(dt) {
 /* ---------- 渲染 ---------- */
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  // 舞台外底色
-  ctx.fillStyle = "#e9e4d8"; ctx.fillRect(0, 0, W, H);
+  // 舞台外的底色：手机上舞台=整屏，这两条边是 0 宽，连填都不用填
+  const sideL = ST.x, sideR = W - ST.x - ST.w;
+  if (sideL > 0 || sideR > 0) {
+    ctx.fillStyle = "#e9e4d8";
+    if (sideL > 0) ctx.fillRect(0, 0, sideL, H);
+    if (sideR > 0) ctx.fillRect(ST.x + ST.w, 0, sideR, H);
+  }
   ctx.save();
   ctx.translate(ST.x, 0);
-  ctx.beginPath(); ctx.rect(0, 0, ST.w, H); ctx.clip();
+  const needClip = sideL > 0 || sideR > 0;   // 手机全宽时省掉一次 clip
+  if (needClip) { ctx.beginPath(); ctx.rect(0, 0, ST.w, H); ctx.clip(); }
   if (G.shake > 0) ctx.translate(rand(-G.shake, G.shake) * 0.4, rand(-G.shake, G.shake) * 0.4);
 
   drawGround();
   // 物件按 y 排序，远的先画
   const list = G.objs.sort((a, b) => a.y - b.y);   // 原地排序，不每帧新建数组
   for (const o of list) {
+    const half = SPRITE / 2;
     if (o.type === "herb") {
       const bob = Math.sin(G.t * 2.4 + o.seed) * 2.5;
       // 影子：让药材"浮"在地面之上，和杂草区分开
@@ -802,13 +911,16 @@ function render() {
         ctx.fillStyle = "rgba(217,131,36,.18)";
         ctx.beginPath(); ctx.arc(o.x, o.y, 31 + Math.sin(G.t * 3) * 3, 0, 7); ctx.fill();
       }
-      herbArt({ x: o.x, y: o.y + bob, data: o.data, seed: o.seed },
-        { s: o.data.rare ? 1.25 : 1.05 });
+      ctx.drawImage(herbSprite(o.data), Math.round(o.x - half),
+        Math.round(o.y + bob - half), SPRITE, SPRITE);
       if (o.data.rare) {
         ctx.font = "600 11px system-ui,sans-serif"; ctx.textAlign = "center";
         ctx.fillStyle = INK; ctx.fillText(o.data.name, o.x, o.y + 32);
       }
-    } else rockArt(o);
+    } else {
+      ctx.drawImage(rockSprite(o.data.type), Math.round(o.x - half),
+        Math.round(o.y - half), SPRITE, SPRITE);
+    }
   }
   drawPlayer();
   if (G.chase.on) {
@@ -842,6 +954,7 @@ function render() {
 const AUTO = new URLSearchParams(location.search).get("auto") === "1";
 const WARP = +(new URLSearchParams(location.search).get("warp") || 0);
 const STAY = new URLSearchParams(location.search).get("stay") === "1";
+let autoTargetX = null;
 
 function autoSteer() {
   const P = G.player;
@@ -866,7 +979,7 @@ function autoSteer() {
     }
     if (hb) tx = hb.x;
   }
-  P.tx = clamp(tx, 18, ST.w - 18);
+  autoTargetX = clamp(tx, CFG.playPad, ST.w - CFG.playPad);
   if (Math.random() < 0.02) doBoost();
 }
 
@@ -891,7 +1004,7 @@ if (new URLSearchParams(location.search).get("dbg") === "1") {
   }, 800);
 }
 resize();
-G.player.x = ST.w / 2; G.player.tx = ST.w / 2; G.player.y = H * 0.30;
+G.player.x = ST.w / 2; G.player.dir = 0; G.player.y = H * 0.30;
 // ?warp=N —— 开发用：先把 N 秒的模拟跑完再显示，方便截图与调数值
 if (WARP > 0) {
   start("challenge");
@@ -904,6 +1017,12 @@ requestAnimationFrame(t => { last = t; loop(t); });
 </script>
 </body>
 </html>
+
+
+
+
+
+
 
 
 
