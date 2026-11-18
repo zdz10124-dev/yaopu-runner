@@ -44,17 +44,21 @@
   .howto{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
   .howto span{font-size:11.5px;color:#5d675f;border-bottom:1.5px solid rgba(176,58,46,.35);
     padding:0 2px 2px}
-  .stamp{position:absolute;right:-2px;top:-14px;width:62px;height:62px;
+  .stamp{position:absolute;right:-4px;top:-18px;width:70px;height:70px;
     display:flex;align-items:center;justify-content:center;text-align:center;
-    font-family:"STKaiti","KaiTi",serif;font-size:17px;line-height:1.1;color:#b03a2e;
-    border:2.5px solid #b03a2e;border-radius:6px;transform:rotate(-9deg);opacity:.82}
+    font-family:"STKaiti","KaiTi",serif;font-size:16px;line-height:1.15;color:#b03a2e;
+    border:2.5px solid #b03a2e;border-radius:4px;transform:rotate(13deg);opacity:.88;
+    filter:url(#rough)}
+  #heroOver{display:block;width:156px;height:125px;margin:4px auto -8px}
+  .claim{margin-top:14px;font-size:12px;color:#8a6a5c}
+  .claim b{color:#b03a2e}
   .big{font-family:"STKaiti","KaiTi",serif;font-size:clamp(54px,17vw,92px);line-height:1;
-       letter-spacing:.01em;font-variant-numeric:tabular-nums}
-  .big small{font-size:.3em;letter-spacing:.1em;color:#7a837a;display:block;margin-top:8px;font-family:inherit}
+       letter-spacing:0;font-variant-numeric:tabular-nums}
+  .big small{font-size:.3em;letter-spacing:.04em;color:#7a837a;display:block;margin-top:8px;font-family:inherit}
   .badge{display:inline-block;margin-top:20px;padding:6px 16px;transform:rotate(-2deg);
     border:2px solid currentColor;border-radius:5px;font-size:14.5px;letter-spacing:.03em;
     font-family:"STKaiti","KaiTi",serif}
-  .pass{color:#3a6e4a;background:rgba(58,110,74,.06)}
+  .pass{color:#b03a2e;background:transparent;border-width:2.5px;filter:url(#rough)}
   .fail{color:#b03a2e;background:rgba(176,58,46,.05)}
   .rows{margin-top:16px;font-size:13.5px;color:#6b736b;line-height:2}
   .rows b{color:#2c342e;font-variant-numeric:tabular-nums}
@@ -81,6 +85,10 @@
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="rough">
+  <feTurbulence type="fractalNoise" baseFrequency="0.07" numOctaves="3" seed="9" result="n"/>
+  <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"/>
+</filter></svg>
 <audio id="bgm" src="audio/bgm.mp3" loop preload="auto"></audio>
 <canvas id="c"></canvas>
 <button class="pad" id="padL"><span></span></button>
@@ -89,7 +97,7 @@
 
 <div id="menu" class="screen">
   <div class="poster">
-    <p class="kicker">中国农业大学 · 园艺学院　元旦晚会</p>
+    <p class="kicker">中国农业大学 · 东区试验田　元旦晚会</p>
     <h1>药圃跑酷</h1>
     <div class="poster-row">
       <canvas id="hero" width="380" height="520"></canvas>
@@ -101,12 +109,12 @@
       <button class="main" data-mode="challenge">开始采药</button>
       <button class="ghost" data-mode="endless">无尽模式</button>
     </div>
-    <p class="tips">手机：按住屏幕左半 / 右半转向　·　电脑：按住 ← → 或 A/D<br>吃到地图上的「健步散」自动加速　·　M 静音</p>
+    <p class="tips">电脑：按住 ← → 或 A/D　·　M 静音<br>赶在霜冻前把药收完——别踩了师兄的样方</p>
     <p class="credit">第 3 摊 · 12.31　｜　BGM：Chinese Chickens (CC-BY 3.0)</p>
     <div class="howto">
       <span>药材 +50</span><span>灵芝 / 人参 +200</span><span>满 2027 分可抽奖</span>
     </div>
-    <div class="stamp">元旦<br>快乐</div>
+    <div class="stamp">第三摊<br>药圃</div>
   </div>
 </div>
 
@@ -114,10 +122,12 @@
   <p class="kicker" id="overKicker">一局结束</p>
   <div class="big"><span id="finalScore">0</span><small>总分</small></div>
   <div id="verdict" class="badge"></div>
+  <canvas id="heroOver" width="300" height="240"></canvas>
   <div class="rows">
     <div>距离 <b id="rDist">0</b> m　·　药材 <b id="rHerb">0</b> 株</div>
-    <div id="rBest">最高分 0</div>
+    <div id="rBest">本机最高 0</div>
   </div>
+  <p class="claim">达标请去 <b>3 号摊</b> 兑奖 · 截图给摊主看</p>
   <div class="btns">
     <button class="main" id="again">再来一次</button>
     <button class="ghost" id="toMenu">回首页</button>
@@ -752,13 +762,10 @@ function rockArt(o) {
 }
 
 /* ---------- 追兵 ---------- */
-function drawChase() {
-  const y = G.chase.y;
-  // 被窄口卡住时抖一下，玩家能看出来"它真的减速了"
-  const stuck = G.stall > 0;
-  const jig = stuck ? Math.sin(G.t * 40) * 5 : 0;
-  ctx.save(); ctx.translate((G.chase.x || ST.w / 2) + jig, y);
+// 园丁 + 狗的画法抽出来，追兵和结算页共用
+function gardenerArt(withDog) {
   // 狗
+  if (withDog !== false) {
   ctx.save(); ctx.translate(-52, 6 + Math.sin(G.t * 14) * 3);
   ink(2.6);
   ctx.fillStyle = "#a5734a";
@@ -767,6 +774,7 @@ function drawChase() {
   ctx.fillStyle = "#8a5e3b";
   ctx.beginPath(); ctx.ellipse(8, -12, 3.5, 7, -0.4, 0, 7); ctx.fill(); ctx.stroke();
   ctx.restore();
+  }
   // 园丁
   ink(3);
   ctx.fillStyle = "#6b5b4a";
@@ -776,7 +784,30 @@ function drawChase() {
   ctx.fillStyle = "#cbb277";
   ctx.beginPath(); ctx.moveTo(-17, -18); ctx.quadraticCurveTo(0, -30, 17, -18);
   ctx.quadraticCurveTo(0, -14, -17, -18); ctx.closePath(); ctx.fill(); ctx.stroke();
+}
+
+function drawChase() {
+  // 被窄口卡住时抖一下，玩家能看出来"它真的减速了"
+  const jig = G.stall > 0 ? Math.sin(G.t * 40) * 5 : 0;
+  ctx.save();
+  ctx.translate((G.chase.x || ST.w / 2) + jig, G.chase.y);
+  gardenerArt();
   ctx.restore();
+}
+
+// 结算页：把园丁放回来，三屏的叙事别断
+function drawOverArt() {
+  const c = document.getElementById("heroOver");
+  if (!c) return;
+  const g = c.getContext("2d");
+  g.clearRect(0, 0, c.width, c.height);
+  const save = ctx; ctx = g;
+  try {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.translate(c.width * 0.5, c.height * 0.58);
+    g.scale(3.1, 3.1);
+    gardenerArt(false);
+  } finally { ctx = save; }
 }
 
 /* ---------- HUD ---------- */
@@ -934,6 +965,7 @@ function gameOver(caught) {
     v.textContent = "差 " + (CFG.threshold - score) + " 分";
   }
   document.getElementById("over").classList.remove("hidden");
+  drawOverArt();
 }
 
 /* ---------- 输入 ----------
@@ -1245,15 +1277,26 @@ function render() {
       ctx.beginPath(); ctx.ellipse(o.x, o.y + 16, 14, 5, 0, 0, 7); ctx.fill();
       ctx.drawImage(boostSprite(), Math.round(o.x - half),
         Math.round(o.y + Math.sin(G.t * 3) * 2.5 - half), SPRITE, SPRITE);
+      ctx.font = "600 11px system-ui,sans-serif"; ctx.textAlign = "center";
+      ctx.fillStyle = "#a0571f"; ctx.fillText("加速", o.x, o.y + 30);
     } else if (o.type === "gate") {
       const fs = rockSprite("fence");
+      ctx.fillStyle = "rgba(60,80,55,.16)";
+      for (const seg of [o.left, o.right]) {
+        ctx.beginPath(); ctx.ellipse(seg.x, o.y + 14, 22, 6.5, 0, 0, 7); ctx.fill();
+      }
       ctx.drawImage(fs, Math.round(o.left.x - half), Math.round(o.y - half), SPRITE, SPRITE);
       ctx.drawImage(fs, Math.round(o.right.x - half), Math.round(o.y - half), SPRITE, SPRITE);
-      // 缝里透一点光，告诉玩家"这里能过"
-      ctx.fillStyle = "rgba(255,253,248,.35)";
-      ctx.fillRect(Math.round(o.x - o.gapW / 2), Math.round(o.y - 6),
-        Math.round(o.gapW), 12);
+      // 缝口画两道向内的小箭头，提示"这儿能钻过去"
+      ctx.strokeStyle = "rgba(58,110,74,.55)"; ctx.lineWidth = 2.5; ctx.lineCap = "round";
+      const ay = Math.round(o.y);
+      ctx.beginPath();
+      ctx.moveTo(o.x - o.gapW / 2 + 6, ay - 7); ctx.lineTo(o.x - 10, ay); ctx.lineTo(o.x - o.gapW / 2 + 6, ay + 7);
+      ctx.moveTo(o.x + o.gapW / 2 - 6, ay - 7); ctx.lineTo(o.x + 10, ay); ctx.lineTo(o.x + o.gapW / 2 - 6, ay + 7);
+      ctx.stroke();
     } else {
+      ctx.fillStyle = "rgba(60,80,55,.16)";
+      ctx.beginPath(); ctx.ellipse(o.x, o.y + 14, 21, 6.5, 0, 0, 7); ctx.fill();
       ctx.drawImage(rockSprite(o.data.type), Math.round(o.x - half),
         Math.round(o.y - half), SPRITE, SPRITE);
     }
@@ -1353,6 +1396,12 @@ requestAnimationFrame(t => { last = t; loop(t); });
 </script>
 </body>
 </html>
+
+
+
+
+
+
 
 
 
