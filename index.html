@@ -13,28 +13,50 @@
     color:#2c342e;user-select:none;touch-action:none;overscroll-behavior:none}
   #c{display:block;width:100%;height:100%}
   .screen{position:fixed;inset:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;text-align:center;
-    background:rgba(250,247,240,.94);backdrop-filter:blur(3px);padding:28px;z-index:10}
+    align-items:center;justify-content:center;text-align:center;padding:44px 28px 64px;
+    background-color:#f7f4ea;padding:28px;z-index:10;overflow:hidden}
+  .screen::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.16'/></svg>")}
   .hidden{display:none!important}
-  .kicker{font-size:12px;letter-spacing:.28em;color:#b03a2e;margin-bottom:10px}
-  h1{font-family:"STKaiti","KaiTi",serif;font-size:clamp(38px,11vw,64px);
-     letter-spacing:.08em;line-height:1.1}
-  .sub{color:#5d675f;font-size:14px;line-height:1.9;margin-top:14px;max-width:20em}
-  .btns{display:flex;gap:12px;margin-top:30px;flex-wrap:wrap;justify-content:center}
-  button{font:inherit;font-size:17px;padding:13px 30px;border-radius:999px;
-    border:2px solid #2c342e;background:#fffdf8;color:#2c342e;cursor:pointer;
+  /* 底部一道手绘田垄，把版面压住，别让下半屏空着 */
+  .screen::after{content:"";position:absolute;left:-12%;right:-12%;bottom:-40px;height:150px;
+    pointer-events:none;opacity:.5;transform:rotate(-2.5deg);
+    background:repeating-linear-gradient(102deg,transparent 0 24px,rgba(44,52,46,.075) 24px 26px)}
+  .poster{position:relative;width:100%;max-width:420px;text-align:left;padding:6px 4px}
+  .poster-row{display:flex;align-items:flex-end;gap:6px;margin-top:4px}
+  #hero{width:172px;height:236px;flex:0 0 172px;margin-left:-18px;margin-bottom:-6px}
+  .poster-main{flex:1;padding-bottom:14px}
+  .kicker{font-size:11.5px;letter-spacing:.1em;color:#b03a2e;margin:0 0 10px}
+  h1{font-family:"STKaiti","KaiTi","Songti SC",serif;font-size:clamp(46px,15vw,64px);
+     letter-spacing:.06em;line-height:1.1;transform:rotate(-1.5deg);margin:0 0 2px}
+  h1::after{content:"";display:block;width:104px;height:2px;margin-top:8px;
+    background:#2c342e;opacity:.35;transform:rotate(-.6deg)}
+  .sub{color:#5d675f;font-size:13px;line-height:1.95;margin:0}
+  .btns{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
+  button{font:inherit;font-size:16.5px;padding:12px 26px;border-radius:10px;
+    border:1.5px solid #2c342e;background:#fffdf8;color:#2c342e;cursor:pointer;
     box-shadow:0 3px 0 #2c342e;transition:transform .06s,box-shadow .06s}
   button:active{transform:translateY(2px);box-shadow:0 1px 0 #2c342e}
   button.main{background:#3a6e4a;border-color:#2c4a36;color:#f7f4ea;box-shadow:0 3px 0 #2c4a36}
-  button.ghost{background:transparent;box-shadow:none;border-color:#c8c0ad;color:#5d675f;font-size:15px}
-  .tips{margin-top:26px;font-size:12.5px;color:#8a9187;line-height:1.9}
-  .big{font-family:"STKaiti","KaiTi",serif;font-size:clamp(56px,18vw,96px);line-height:1;letter-spacing:.02em}
-  .big small{font-size:.32em;letter-spacing:.1em;color:#5d675f;display:block;margin-top:10px;font-family:inherit}
-  .badge{display:inline-block;margin-top:18px;padding:7px 20px;border-radius:999px;
-    font-size:15px;letter-spacing:.06em}
-  .pass{background:#3a6e4a;color:#f7f4ea}
-  .fail{background:#f4e6de;color:#b03a2e;border:1.5px dashed #d9b3a6}
-  .rows{margin-top:18px;font-size:14px;color:#5d675f;line-height:2}
+  button.ghost{background:transparent;box-shadow:none;border-color:#a9b09c;color:#4d564b;font-size:14.5px}
+  .tips{margin-top:16px;font-size:11.5px;color:#8a9187;line-height:1.9}
+  .credit{margin-top:10px;font-size:10.5px;color:#b3ab97;letter-spacing:.02em}
+  .howto{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+  .howto span{font-size:11.5px;color:#5d675f;border-bottom:1.5px solid rgba(176,58,46,.35);
+    padding:0 2px 2px}
+  .stamp{position:absolute;right:-2px;top:-14px;width:62px;height:62px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-family:"STKaiti","KaiTi",serif;font-size:17px;line-height:1.1;color:#b03a2e;
+    border:2.5px solid #b03a2e;border-radius:6px;transform:rotate(-9deg);opacity:.82}
+  .big{font-family:"STKaiti","KaiTi",serif;font-size:clamp(54px,17vw,92px);line-height:1;
+       letter-spacing:.01em;font-variant-numeric:tabular-nums}
+  .big small{font-size:.3em;letter-spacing:.1em;color:#7a837a;display:block;margin-top:8px;font-family:inherit}
+  .badge{display:inline-block;margin-top:20px;padding:6px 16px;transform:rotate(-2deg);
+    border:2px solid currentColor;border-radius:5px;font-size:14.5px;letter-spacing:.03em;
+    font-family:"STKaiti","KaiTi",serif}
+  .pass{color:#3a6e4a;background:rgba(58,110,74,.06)}
+  .fail{color:#b03a2e;background:rgba(176,58,46,.05)}
+  .rows{margin-top:16px;font-size:13.5px;color:#6b736b;line-height:2}
   .rows b{color:#2c342e;font-variant-numeric:tabular-nums}
   /* 左右幽灵按钮：实心圆、拇指区、按住才亮 */
   .pad{position:fixed;top:62%;transform:translateY(-50%);width:72px;height:110px;
@@ -50,26 +72,42 @@
   #padR span::before{transform:rotate(-135deg) translate(2px,-2px)}
   .pad:active span{background:rgba(249,246,239,.9);transform:scale(.94)}
   #padL{left:2px} #padR{right:2px}
-  #toast{position:fixed;left:50%;top:16%;transform:translateX(-50%);
-    background:rgba(176,58,46,.94);color:#fff;padding:9px 20px;border-radius:999px;
-    font-size:14.5px;letter-spacing:.05em;opacity:0;transition:opacity .25s;z-index:8;pointer-events:none}
+  #toast{position:fixed;left:50%;top:16%;transform:translateX(-50%) rotate(-1.2deg);
+    background:#a8574a;color:#fdf6ec;padding:8px 18px;border-radius:3px;
+    font-size:14px;letter-spacing:.02em;opacity:0;transition:opacity .25s;z-index:8;pointer-events:none;
+    box-shadow:2px 3px 0 rgba(0,0,0,.12)}
+  #toast::after{content:"";position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);
+    border-left:8px solid transparent;border-right:8px solid transparent;border-top:8px solid #a8574a}
 </style>
 </head>
 <body>
+<audio id="bgm" src="audio/bgm.mp3" loop preload="auto"></audio>
 <canvas id="c"></canvas>
 <button class="pad" id="padL"><span></span></button>
 <button class="pad" id="padR"><span></span></button>
 <div id="toast"></div>
 
 <div id="menu" class="screen">
-  <p class="kicker">活动第三关</p>
-  <h1>药圃跑酷</h1>
-  <p class="sub">按住屏幕左右转向，收药材，别撞石头。<br>45 秒后园丁放狗追你。</p>
-  <div class="btns">
-    <button class="main" data-mode="challenge">开始采药</button>
-    <button class="ghost" data-mode="endless">无尽模式</button>
+  <div class="poster">
+    <p class="kicker">中国农业大学 · 园艺学院　元旦晚会</p>
+    <h1>药圃跑酷</h1>
+    <div class="poster-row">
+      <canvas id="hero" width="380" height="520"></canvas>
+      <div class="poster-main">
+        <p class="sub">按住屏幕左右转向<br>收药材，别撞石头<br>58 秒后园丁放狗追你<br>钻篱笆缝能把园丁卡住</p>
+      </div>
+    </div>
+    <div class="btns">
+      <button class="main" data-mode="challenge">开始采药</button>
+      <button class="ghost" data-mode="endless">无尽模式</button>
+    </div>
+    <p class="tips">手机：按住屏幕左半 / 右半转向　·　电脑：按住 ← → 或 A/D<br>吃到地图上的「健步散」自动加速　·　M 静音</p>
+    <p class="credit">第 3 摊 · 12.31　｜　BGM：Chinese Chickens (CC-BY 3.0)</p>
+    <div class="howto">
+      <span>药材 +50</span><span>灵芝 / 人参 +200</span><span>满 2027 分可抽奖</span>
+    </div>
+    <div class="stamp">元旦<br>快乐</div>
   </div>
-  <p class="tips">手机：按住屏幕左半/右半转向　·　电脑：按住 ←→ 或 A/D<br>吃到地图上的「健步散」自动加速</p>
 </div>
 
 <div id="over" class="screen hidden">
@@ -205,7 +243,7 @@ const sfx = {
    不需要下载、不存在版权问题（自写音符），也能无缝循环。
    想换成 mp3 的话，把 <audio> 接进来即可。
 */
-const MUSIC = { on: false, step: 0, next: 0, timer: null, bus: null, muted: false };
+const MUSIC = { on: false, proc: false, step: 0, next: 0, timer: null, bus: null, muted: false, el: null };
 const PENTA = [0, 2, 4, 7, 9, 12, 14, 16];      // 宫调五声 + 高八度
 const BASE_FREQ = 261.63;                        // C4
 const MELODY = [0, 2, 4, 7, 4, 2, 0, 2, 4, 7, 9, 7, 4, 2, 0, -1];
@@ -221,9 +259,22 @@ function pluck(time, freq, dur, vol, type) {
   o.connect(g); g.connect(MUSIC.bus);
   o.start(time); o.stop(time + dur + 0.05);
 }
+// 有音乐文件就放文件；加载失败 / 打不开就退回现场合成
 function startMusic() {
-  if (!AC || MUSIC.on) return;
+  if (MUSIC.on) return;
   MUSIC.on = true;
+  const el = document.getElementById("bgm");
+  if (!el) { startProcedural(); return; }
+  MUSIC.el = el;
+  el.volume = 0.38;
+  el.muted = MUSIC.muted;
+  el.addEventListener("error", startProcedural);
+  const p = el.play();
+  if (p && p.catch) p.catch(() => startProcedural());
+}
+function startProcedural() {
+  if (!AC || MUSIC.proc) return;
+  MUSIC.proc = true;
   MUSIC.bus = AC.createGain();
   MUSIC.bus.gain.value = MUSIC.muted ? 0 : 0.5;
   MUSIC.bus.connect(AC.destination);
@@ -246,7 +297,107 @@ function scheduleMusic() {
 function toggleMute() {
   MUSIC.muted = !MUSIC.muted;
   if (MUSIC.bus) MUSIC.bus.gain.value = MUSIC.muted ? 0 : 0.5;
+  if (MUSIC.el) MUSIC.el.muted = MUSIC.muted;
   toast(MUSIC.muted ? "静音" : "开声音");
+}
+
+/* ---------- 菜单主视觉：大号采药人 ----------
+   评审说菜单"没有一个形象、像 flex 居中的网页"，这里补上画面主体。
+*/
+function drawHero() {
+  const hc = document.getElementById("hero");
+  if (!hc) return;
+  const g = hc.getContext("2d");
+  const W2 = hc.width, H2 = hc.height;
+  g.clearRect(0, 0, W2, H2);
+  g.save();
+  g.translate(W2 * 0.5, H2 * 0.78);
+  g.scale(3.1, 3.1);
+
+  // 地面：两道手绘墨线
+  g.strokeStyle = "rgba(44,52,46,.55)"; g.lineWidth = 1.5; g.lineCap = "round";
+  g.beginPath(); g.moveTo(-46, 30); g.quadraticCurveTo(-20, 27, 8, 30); g.quadraticCurveTo(28, 32, 46, 29); g.stroke();
+  g.strokeStyle = "rgba(44,52,46,.22)";
+  g.beginPath(); g.moveTo(-34, 35); g.quadraticCurveTo(-10, 33, 22, 35); g.stroke();
+
+  const ink2 = (w) => { g.strokeStyle = "#2c342e"; g.lineWidth = w; g.lineJoin = "round"; g.lineCap = "round"; };
+  const rr = (x, y, w, h, r) => {
+    g.beginPath();
+    g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r);
+    g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r);
+    g.arcTo(x, y, x + w, y, r);
+    g.closePath();
+  };
+
+  // 腿
+  ink2(2.6);
+  g.fillStyle = "#2f4a3e";
+  rr(-11, 10, 9, 20, 4.5); g.fill(); g.stroke();
+  rr(3, 12, 9, 18, 4.5); g.fill(); g.stroke();
+  // 布鞋
+  g.fillStyle = "#c8bda6";
+  rr(-13, 27, 14, 6, 3); g.fill(); g.stroke();
+  rr(2, 27, 14, 6, 3); g.fill(); g.stroke();
+
+  // 身体（青布衫）
+  g.fillStyle = "#4b7a63";
+  rr(-16, -16, 32, 32, 11); g.fill(); g.stroke();
+  // 腰带
+  g.fillStyle = "#c9a86b";
+  rr(-16, 2, 32, 6, 3); g.fill(); g.stroke();
+
+  // 背上的药篓（偏左，露出三株药材）
+  g.save(); g.translate(-19, -2);
+  g.fillStyle = "#c09a63";
+  rr(-10, -12, 20, 24, 7); g.fill(); g.stroke();
+  ink2(1.6);
+  for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(i * 6, -11); g.lineTo(i * 6, 11); g.stroke(); }
+  // 药材叶子
+  g.fillStyle = "#6b9c5c";
+  g.beginPath(); g.ellipse(-3, -17, 6, 3, -0.5, 0, 7); g.fill(); g.stroke();
+  g.beginPath(); g.ellipse(5, -19, 6, 3, 0.4, 0, 7); g.fill(); g.stroke();
+  g.fillStyle = "#c0392b";
+  g.beginPath(); g.arc(-6, -20, 2.6, 0, 7); g.fill(); g.stroke();
+  g.restore();
+
+  // 右手扛锄头
+  ink2(2.4);
+  g.strokeStyle = "#8a6b45"; g.lineWidth = 3.4;
+  g.beginPath(); g.moveTo(20, 28); g.lineTo(27, -16); g.stroke();
+  g.fillStyle = "#9aa0a6";
+  g.beginPath();
+  g.moveTo(27, -16); g.lineTo(36, -19); g.lineTo(34, -11); g.lineTo(26, -9);
+  g.closePath(); g.fill();
+  ink2(2); g.stroke();
+
+  // 手臂
+  g.fillStyle = "#f0cfa9"; ink2(2.6);
+  g.beginPath(); g.arc(-19, -6, 4.6, 0, 7); g.fill(); g.stroke();
+  g.beginPath(); g.arc(19, -4, 4.6, 0, 7); g.fill(); g.stroke();
+
+  // 头
+  g.fillStyle = "#f2d3b3";
+  g.beginPath(); g.arc(0, -28, 12, 0, 7); g.fill(); g.stroke();
+  // 斗笠
+  g.fillStyle = "#d9b878";
+  g.beginPath();
+  g.moveTo(-24, -31); g.quadraticCurveTo(0, -46, 24, -31);
+  g.quadraticCurveTo(0, -25, -24, -31); g.closePath();
+  g.fill(); g.stroke();
+  ink2(1.6); g.strokeStyle = "rgba(44,52,46,.5)";
+  g.beginPath(); g.moveTo(-14, -33); g.quadraticCurveTo(0, -37, 14, -33); g.stroke();
+  // 笠尖
+  g.fillStyle = "#c9a86b"; ink2(2.2); g.strokeStyle = "#2c342e";
+  g.beginPath(); g.moveTo(-5, -40); g.quadraticCurveTo(0, -47, 5, -40); g.closePath(); g.fill(); g.stroke();
+
+  // 墨点
+  g.fillStyle = "rgba(44,52,46,.18)";
+  for (const p of [[-40, -12, 2.2], [38, 8, 1.8], [30, -46, 1.6], [-30, 22, 1.4]]) {
+    g.beginPath(); g.arc(p[0], p[1], p[2], 0, 7); g.fill();
+  }
+  g.restore();
 }
 
 /* ---------- 状态 ---------- */
@@ -333,20 +484,28 @@ function buildGroundTile() {
     const y = i * BAND;
     g.fillStyle = (i % 2 === 0) ? "#e2ecd2" : "#eaf1dd";
     g.fillRect(0, y, ST.w, BAND);
-    // 垄沟
-    g.strokeStyle = "rgba(120,140,110,.35)"; g.lineWidth = 2.5;
+    // 垄沟：加一点抖动，避免完美正弦的"程序味"
+    g.strokeStyle = "rgba(120,140,110,.32)"; g.lineWidth = 2.5;
     g.lineCap = "round"; g.lineJoin = "round";
     g.beginPath();
     for (let x = -10; x <= ST.w + 10; x += 26) {
-      const yy = y + 4 + Math.sin((x + i * 37) * 0.045) * 3;
+      const jit = ((x * 13 + i * 29) % 7) - 3;
+      const yy = y + 4 + Math.sin((x + i * 37) * 0.045) * 3 + jit * 0.8;
       x === -10 ? g.moveTo(x, yy) : g.lineTo(x, yy);
     }
     g.stroke();
-    // 垄上的杂草（只做质感，不描边，避免和药材混淆）
-    const span = Math.max(20, ST.w - 80);
-    const r1 = ((i * 137) % 97) / 97, r2 = ((i * 61) % 89) / 89;
-    grassOn(g, 40 + r1 * span, y + BAND * 0.62, 0.9 + ((i * 7) % 3) * 0.12);
-    grassOn(g, 40 + r2 * span, y + BAND * 0.28, 0.85 + ((i * 5) % 3) * 0.1);
+    // 垄上杂草：密度降到 1/3，颜色压淡，别跟药材抢视线
+    if (i % 3 === 0) {
+      const r1 = ((i * 137) % 97) / 97;
+      grassOn(g, 40 + r1 * Math.max(20, ST.w - 80), y + BAND * 0.58, 0.8);
+    }
+    // 纸纹颗粒
+    for (let d = 0; d < 26; d++) {
+      const px = ((i * 73 + d * 37) % 1000) / 1000 * ST.w;
+      const py = y + ((i * 61 + d * 91) % 1000) / 1000 * BAND;
+      g.fillStyle = d % 3 ? "rgba(120,110,90,.05)" : "rgba(90,80,60,.07)";
+      g.fillRect(px, py, 1.6, 1.6);
+    }
   }
   // 两侧田埂（石边），让画面有边界
   g.fillStyle = "rgba(196,186,164,.5)";
@@ -1180,6 +1339,7 @@ if (new URLSearchParams(location.search).get("dbg") === "1") {
   }, 800);
 }
 resize();
+drawHero();
 G.player.x = ST.w / 2; G.player.dir = 0; G.player.y = H * 0.30;
 // ?warp=N —— 开发用：先把 N 秒的模拟跑完再显示，方便截图与调数值
 if (WARP > 0) {
@@ -1193,6 +1353,11 @@ requestAnimationFrame(t => { last = t; loop(t); });
 </script>
 </body>
 </html>
+
+
+
+
+
 
 
 
