@@ -36,12 +36,20 @@
   .fail{background:#f4e6de;color:#b03a2e;border:1.5px dashed #d9b3a6}
   .rows{margin-top:18px;font-size:14px;color:#5d675f;line-height:2}
   .rows b{color:#2c342e;font-variant-numeric:tabular-nums}
-  #boost{position:fixed;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));
-    width:78px;height:78px;padding:0;border-radius:50%;display:none;flex-direction:column;
-    align-items:center;justify-content:center;gap:0;font-size:12.5px;line-height:1.2;
-    background:rgba(255,253,248,.92);z-index:6}
-  #boost b{font-size:18px;line-height:1.1}
-  #boost.off{opacity:.4}
+  /* 左右幽灵按钮：实心圆、拇指区、按住才亮 */
+  .pad{position:fixed;top:62%;transform:translateY(-50%);width:72px;height:110px;
+    display:none;align-items:center;justify-content:center;z-index:6;
+    border:0;background:transparent;padding:0;box-shadow:none}
+  .pad span{display:flex;align-items:center;justify-content:center;position:relative;
+    width:66px;height:66px;border-radius:50%;
+    background:rgba(249,246,239,.55);border:2px solid rgba(44,52,46,.28);
+    transition:background .12s,transform .12s}
+  .pad span::before{content:"";width:15px;height:15px;
+    border-left:3.5px solid #4a5a44;border-bottom:3.5px solid #4a5a44;
+    transform:rotate(45deg) translate(2px,-2px)}
+  #padR span::before{transform:rotate(-135deg) translate(2px,-2px)}
+  .pad:active span{background:rgba(249,246,239,.9);transform:scale(.94)}
+  #padL{left:2px} #padR{right:2px}
   #toast{position:fixed;left:50%;top:16%;transform:translateX(-50%);
     background:rgba(176,58,46,.94);color:#fff;padding:9px 20px;border-radius:999px;
     font-size:14.5px;letter-spacing:.05em;opacity:0;transition:opacity .25s;z-index:8;pointer-events:none}
@@ -49,7 +57,8 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<button id="boost"><b>×2</b>冲刺</button>
+<button class="pad" id="padL"><span></span></button>
+<button class="pad" id="padR"><span></span></button>
 <div id="toast"></div>
 
 <div id="menu" class="screen">
@@ -60,7 +69,7 @@
     <button class="main" data-mode="challenge">开始采药</button>
     <button class="ghost" data-mode="endless">无尽模式</button>
   </div>
-  <p class="tips">手机：按住屏幕左半/右半转向　·　电脑：按住 ←→ 或 A/D<br>冲刺：空格 / F / 右下按钮</p>
+  <p class="tips">手机：按住屏幕左半/右半转向　·　电脑：按住 ←→ 或 A/D<br>吃到地图上的「健步散」自动加速</p>
 </div>
 
 <div id="over" class="screen hidden">
@@ -91,42 +100,45 @@
    ============================================================ */
 
 const CFG = {
-  threshold: 1000,        // 抽奖门槛分（总分 = 米数 + 药材分）
-  lives: 3,               // 挑战模式命数
-  livesEndless: 5,        // 无尽模式命数
-  boosts: 2,              // 每局冲刺次数
-  boostTime: 3.0,         // 单次冲刺时长（秒）
-  boostMul: 1.6,          // 冲刺速度倍率
-  lateralSpeed: 1.55,     // 横向转向速度：每秒走过 1.55 个屏宽
+  threshold: 2027,        // 抽奖门槛分（总分 = 米数 + 药材分）
+  lives: 4,               // 挑战模式命数
+  livesEndless: 6,        // 无尽模式命数
+  boostTime: 2.6,         // 吃到「健步散」后的加速时长（秒）
+  boostMul: 1.45,         // 加速时的速度倍率
+  lateralSpeed: 1.35,     // 横向转向速度：每秒走过 1.35 个屏宽
   playPad: 26,            // 玩家左右能到的最边缘（也是物件生成的最边缘）
-  hurtSlow: 0.55,         // 撞击后减速倍率
-  hurtSlowTime: 0.45,
-  invincible: 1.2,        // 撞击后无敌时间
-  baseSpeed: 0.56,        // 基础速度：每秒走过 0.56 个屏幕高
-  speedStep: 0.08,        // 每 speedEvery 秒 +8%
-  speedEvery: 10,
-  speedCap: 1.6,
-  herbEvery: 0.70,        // 药材生成间隔（秒）
-  herbEveryMin: 0.45,
-  rockEvery: 1.65,        // 障碍生成间隔（秒）
-  rockEveryMin: 0.85,
-  chaseStart: 45,         // 第几秒放狗
-  chaseSpeed: 1.03,       // 狗自己的速度 = 玩家当前基础速度 × 这个（与冲刺无关）
-  chaseRamp: 0.003,       // 狗每秒再凶一点
-  chaseMaxUp: -170,       // 被冲刺甩开时最多退到多高
-  pxPerMeter: 0.052,      // 多少屏幕高算 1 米
+  hurtSlow: 0.60,         // 撞击后减速倍率
+  hurtSlowTime: 0.35,
+  invincible: 1.4,        // 撞击后无敌时间
+  baseSpeed: 0.40,        // 基础速度：每秒走过 0.40 个屏幕高（比首版慢约三成）
+  speedStep: 0.045,       // 每 speedEvery 秒 +4.5%
+  speedEvery: 12,
+  speedCap: 1.30,
+  herbEvery: 0.58,        // 药材生成间隔（秒）
+  herbEveryMin: 0.38,
+  rockEvery: 1.95,        // 障碍生成间隔（秒）
+  rockEveryMin: 1.05,
+  boostEvery: 9.5,        // 「健步散」多久出现一次
+  gateEvery: 11,          // 窄口多久出现一次
+  chaseStart: 58,         // 第几秒放狗
+  chaseSpeed: 1.012,      // 狗自己的速度 = 玩家基础速度 × 这个（与加速无关）
+  chaseRamp: 0.0022,      // 狗每秒再凶一点
+  chaseMaxUp: -220,       // 被甩开时最多退到多高
+  stallTime: 1.4,         // 从窄口挤过去，能把园丁卡住多久（秒）
+  stallPush: 90,          // 卡住时把园丁往回推多少像素
+  pxPerMeter: 0.040,      // 多少屏幕高算 1 米
   lanes: 5,               // 生成时对齐的列数
 };
 
 const HERBS = [
-  { name: "枸杞", pts: 10, kind: "berry",  color: "#c0392b" },
-  { name: "当归", pts: 10, kind: "root",   color: "#a9793f" },
-  { name: "薄荷", pts: 10, kind: "leaf",   color: "#5c9a52" },
-  { name: "黄芪", pts: 10, kind: "root",   color: "#c9a227" },
-  { name: "甘草", pts: 10, kind: "stick",  color: "#b08a5a" },
-  { name: "菊花", pts: 10, kind: "flower", color: "#e8b33a" },
-  { name: "灵芝", pts: 50, kind: "fungus", color: "#8c3a2e", rare: true },
-  { name: "人参", pts: 50, kind: "ginseng",color: "#e0cfa8", rare: true },
+  { name: "枸杞", pts: 50, kind: "berry",  color: "#c0392b" },
+  { name: "当归", pts: 50, kind: "root",   color: "#a9793f" },
+  { name: "薄荷", pts: 50, kind: "leaf",   color: "#5c9a52" },
+  { name: "黄芪", pts: 50, kind: "root",   color: "#c9a227" },
+  { name: "甘草", pts: 50, kind: "stick",  color: "#b08a5a" },
+  { name: "菊花", pts: 50, kind: "flower", color: "#e8b33a" },
+  { name: "灵芝", pts: 200, kind: "fungus", color: "#8c3a2e", rare: true },
+  { name: "人参", pts: 200, kind: "ginseng",color: "#e0cfa8", rare: true },
 ];
 const ROCKS = ["rock", "fence", "scarecrow", "bucket"];
 
@@ -168,6 +180,7 @@ let AC = null;
 function audioReady() {
   if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } }
   if (AC && AC.state === "suspended") AC.resume();
+  if (AC) startMusic();
 }
 function beep(f, dur, type = "sine", vol = 0.09, f2 = null) {
   if (!AC) return;
@@ -187,6 +200,55 @@ const sfx = {
   over: () => { beep(320, 0.18, "triangle", 0.08); setTimeout(() => beep(220, 0.3, "triangle", 0.08), 150); },
 };
 
+/* ---------- 背景音乐 ----------
+   五声音阶的小循环，用 WebAudio 现场合成：
+   不需要下载、不存在版权问题（自写音符），也能无缝循环。
+   想换成 mp3 的话，把 <audio> 接进来即可。
+*/
+const MUSIC = { on: false, step: 0, next: 0, timer: null, bus: null, muted: false };
+const PENTA = [0, 2, 4, 7, 9, 12, 14, 16];      // 宫调五声 + 高八度
+const BASE_FREQ = 261.63;                        // C4
+const MELODY = [0, 2, 4, 7, 4, 2, 0, 2, 4, 7, 9, 7, 4, 2, 0, -1];
+const BASS = [0, -1, -1, 4, -1, -1, 7, -1, 0, -1, -1, 4, -1, 7, -1, -1];
+
+function pluck(time, freq, dur, vol, type) {
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, time);
+  g.gain.setValueAtTime(0.0001, time);
+  g.gain.linearRampToValueAtTime(vol, time + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+  o.connect(g); g.connect(MUSIC.bus);
+  o.start(time); o.stop(time + dur + 0.05);
+}
+function startMusic() {
+  if (!AC || MUSIC.on) return;
+  MUSIC.on = true;
+  MUSIC.bus = AC.createGain();
+  MUSIC.bus.gain.value = MUSIC.muted ? 0 : 0.5;
+  MUSIC.bus.connect(AC.destination);
+  MUSIC.next = AC.currentTime + 0.15;
+  MUSIC.timer = setInterval(scheduleMusic, 120);
+}
+function scheduleMusic() {
+  if (!MUSIC.on || !AC) return;
+  const stepDur = 0.34;
+  while (MUSIC.next < AC.currentTime + 0.5) {
+    const i = MUSIC.step % 16;
+    const m = MELODY[i];
+    if (m >= 0) pluck(MUSIC.next, BASE_FREQ * Math.pow(2, PENTA[m] / 12), 0.9, 0.12, "triangle");
+    const b = BASS[i];
+    if (b >= 0) pluck(MUSIC.next, BASE_FREQ * Math.pow(2, (PENTA[b] - 12) / 12), 1.4, 0.10, "sine");
+    MUSIC.next += stepDur;
+    MUSIC.step++;
+  }
+}
+function toggleMute() {
+  MUSIC.muted = !MUSIC.muted;
+  if (MUSIC.bus) MUSIC.bus.gain.value = MUSIC.muted ? 0 : 0.5;
+  toast(MUSIC.muted ? "静音" : "开声音");
+}
+
 /* ---------- 状态 ---------- */
 const G = {
   state: "menu",        // menu | play | over | pause
@@ -196,9 +258,11 @@ const G = {
   meters: 0,
   herbs: 0,
   herbPts: 0,
-  lives: 3,
-  boosts: 2,
+  lives: 4,
   boostT: 0,
+  stall: 0,             // 园丁被卡住的剩余时间
+  spawnBoostT: 0,
+  spawnGateT: 0,
   inv: 0,
   slowT: 0,
   shake: 0,
@@ -207,7 +271,7 @@ const G = {
   objs: [],             // 地上物件 {x,y,type,...}
   fx: [],               // 飘字
   player: { x: 0, y: 0, dir: 0, r: 24, phase: 0 },
-  chase: { on: false, y: -200, dogPhase: 0 },
+  chase: { on: false, y: -200, x: 0, dogPhase: 0 },
   warned: false,
   fps: 60,
 };
@@ -327,6 +391,21 @@ function rockSprite(type) {
   const key = "r:" + type;
   return sprites.get(key) || makeSprite(key,
     () => rockArt({ x: 0, y: 0, data: { type } }));
+}
+// 健步散：一只药葫芦
+function boostSprite() {
+  const key = "b:gourd";
+  return sprites.get(key) || makeSprite(key, () => gourdArt());
+}
+function gourdArt() {
+  ink(2.8);
+  ctx.fillStyle = "#d9a441";
+  ctx.beginPath(); ctx.arc(0, -7, 7.5, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 7, 10.5, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#8c3a2e";
+  roundRect(-4, -15, 8, 5, 2); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = "#b03a2e"; ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.moveTo(-9.5, -1); ctx.lineTo(9.5, -1); ctx.stroke();
 }
 
 /* ---------- 主角（背身、朝下跑） ---------- */
@@ -516,7 +595,10 @@ function rockArt(o) {
 /* ---------- 追兵 ---------- */
 function drawChase() {
   const y = G.chase.y;
-  ctx.save(); ctx.translate(ST.w / 2, y);
+  // 被窄口卡住时抖一下，玩家能看出来"它真的减速了"
+  const stuck = G.stall > 0;
+  const jig = stuck ? Math.sin(G.t * 40) * 5 : 0;
+  ctx.save(); ctx.translate((G.chase.x || ST.w / 2) + jig, y);
   // 狗
   ctx.save(); ctx.translate(-52, 6 + Math.sin(G.t * 14) * 3);
   ink(2.6);
@@ -541,7 +623,6 @@ function drawChase() {
 /* ---------- HUD ---------- */
 let hudGrad = null;
 let dangerGrad = null, dangerGradStep = -1;
-let boostEl = null, boostNumEl = null, boostLast = "-";
 function heart(x, y, full, s = 1) {
   ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
   ctx.beginPath();
@@ -557,34 +638,47 @@ function drawHUD() {
   const top = 18;
   // 顶部压一层浅色渐变，保证 HUD 在田地上也看得清（渐变对象缓存，不每帧新建）
   if (!hudGrad) {
-    hudGrad = ctx.createLinearGradient(0, 0, 0, top + 74);
-    hudGrad.addColorStop(0, "rgba(250,247,240,.92)");
+    hudGrad = ctx.createLinearGradient(0, 0, 0, 96);
+    hudGrad.addColorStop(0, "rgba(250,247,240,.97)");
+    hudGrad.addColorStop(.72, "rgba(250,247,240,.86)");
     hudGrad.addColorStop(1, "rgba(250,247,240,0)");
   }
-  ctx.fillStyle = hudGrad; ctx.fillRect(0, 0, ST.w, top + 74);
-  // 命
-  for (let i = 0; i < Math.max(G.lives, 0); i++) heart(28 + i * 26, top + 12, true);
-  if (G.mode === "challenge") for (let i = G.lives; i < CFG.lives; i++) heart(28 + i * 26, top + 12, false);
-  // 距离
-  ctx.font = "600 20px system-ui,sans-serif"; ctx.textAlign = "center";
+  ctx.fillStyle = hudGrad; ctx.fillRect(0, 0, ST.w, 96);
+
+  // 第一行：命（左）
+  const lives = Math.max(G.lives, 0);
+  for (let i = 0; i < lives; i++) heart(26 + i * 25, top + 10, true);
+  if (G.mode === "challenge") {
+    for (let i = lives; i < CFG.lives; i++) heart(26 + i * 25, top + 10, false);
+  }
+
+  // 第一行：距离（中）
+  ctx.font = "600 21px system-ui,sans-serif"; ctx.textAlign = "center";
   ctx.fillStyle = INK;
-  ctx.fillText(Math.floor(G.meters) + " m", ST.w / 2, top + 22);
-  // 门槛进度条：让玩家随时知道离抽奖还差多远
+  ctx.fillText(Math.floor(G.meters) + " m", ST.w / 2, top + 18);
+
+  // 距离下方：门槛进度（轨道与填充同高同圆角）
   if (G.mode === "challenge") {
     const sc = Math.floor(G.meters) + G.herbPts;
     const prog = clamp(sc / CFG.threshold, 0, 1);
-    const bw = 100, bx = ST.w / 2 - bw / 2, by = top + 30;
-    ctx.fillStyle = "rgba(44,52,46,.13)"; roundRect(bx, by, bw, 5, 3); ctx.fill();
-    ctx.fillStyle = prog >= 1 ? "#3a6e4a" : "#d98324";
-    roundRect(bx, by, Math.max(2, bw * prog), 5, 3); ctx.fill();
+    const bw = 100, bh = 6, bx = ST.w / 2 - bw / 2, by = top + 28;
+    ctx.fillStyle = "rgba(44,52,46,.14)"; roundRect(bx, by, bw, bh, bh / 2); ctx.fill();
+    if (prog > 0) {
+      ctx.fillStyle = prog >= 1 ? "#3a6e4a" : "#c0662a";
+      roundRect(bx, by, Math.max(bh, bw * prog), bh, bh / 2); ctx.fill();
+    }
   }
-  // 药材数
+
+  // 第二行：药材数（左）／加速状态（右）
   ctx.textAlign = "left";
-  ctx.font = "600 14px system-ui,sans-serif";
+  ctx.font = "600 13.5px system-ui,sans-serif";
   ctx.fillStyle = "#3a6e4a";
-  ctx.fillText("药材 " + G.herbs, 22, top + 52);
-  ctx.textAlign = "right";
-  if (G.boostT > 0) { ctx.fillStyle = "#d98324"; ctx.fillText("加速中", ST.w - 22, top + 52); }
+  ctx.fillText("药材 " + G.herbs, 24, top + 56);
+  if (G.boostT > 0) {
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#c0662a";
+    ctx.fillText("加速中", ST.w - 24, top + 56);
+  }
   if (FPSDBG) {
     ctx.textAlign = "left"; ctx.font = "700 12px system-ui,sans-serif";
     ctx.fillStyle = G.fps >= 50 ? "#3a6e4a" : (G.fps >= 40 ? "#d98324" : "#b03a2e");
@@ -613,6 +707,22 @@ function spawnRock() {
     data: { type: pick(ROCKS) }, r: 26
   });
 }
+// 「健步散」：吃到自动加速，不再靠手按
+function spawnBoost() {
+  const i = (Math.random() * CFG.lanes) | 0;
+  G.objs.push({ type: "boost", x: laneX(i), y: H + 70, r: 26, seed: rand(0, 6) });
+}
+// 窄口：两段篱笆中间留一道缝，从缝里钻过去能把园丁卡住
+function spawnGate() {
+  const gapW = Math.max(84, ST.w * 0.24);
+  const gapX = rand(ST.w * 0.32, ST.w * 0.68);
+  G.objs.push({
+    type: "gate", x: gapX, gapW, y: H + 90,
+    r: 0, passed: false,
+    left: { x: gapX - gapW / 2 - 26, r: 26, type: "fence" },
+    right: { x: gapX + gapW / 2 + 26, r: 26, type: "fence" }
+  });
+}
 function toast(msg) {
   const el = document.getElementById("toast");
   el.textContent = msg; el.style.opacity = 1;
@@ -627,23 +737,23 @@ function start(mode) {
   G.state = "play";
   G.t = 0; G.scroll = 0; G.meters = 0; G.herbs = 0; G.herbPts = 0;
   G.lives = mode === "endless" ? CFG.livesEndless : CFG.lives;
-  G.boosts = CFG.boosts; G.boostT = 0; G.inv = 0; G.slowT = 0; G.shake = 0;
-  G.spawnHerbT = 0.5; G.spawnRockT = 1.2;
+  G.boostT = 0; G.inv = 0; G.slowT = 0; G.shake = 0; G.stall = 0;
+  G.spawnHerbT = 0.5; G.spawnRockT = 1.4;
+  G.spawnBoostT = CFG.boostEvery; G.spawnGateT = CFG.gateEvery + 6;
   G.objs.length = 0; G.fx.length = 0;
-  G.chase = { on: false, y: -160, dogPhase: 0 };
+  G.chase = { on: false, y: -160, x: ST.w / 2, dogPhase: 0 };
   G.warned = false;
   G.player.x = ST.w / 2; G.player.dir = 0; G.player.y = Math.round(H * 0.30);
   document.getElementById("menu").classList.add("hidden");
   document.getElementById("over").classList.add("hidden");
   document.getElementById("pause").classList.add("hidden");
-  document.getElementById("boost").style.display = "flex";
-  updateBoostBtn();
+  showPads(true);
   beep(520, 0.12, "triangle", 0.07, 780);
 }
 function gameOver(caught) {
   G.state = "over";
   sfx.over();
-  document.getElementById("boost").style.display = "none";
+  showPads(false);
   const score = Math.floor(G.meters) + G.herbPts;
   const best = Math.max(score, +(localStorage.getItem("yaopu.best") || 0));
   localStorage.setItem("yaopu.best", best);
@@ -651,18 +761,18 @@ function gameOver(caught) {
   document.getElementById("finalScore").textContent = score;
   document.getElementById("rDist").textContent = Math.floor(G.meters);
   document.getElementById("rHerb").textContent = G.herbs;
-  document.getElementById("rBest").textContent = "最高分 " + best;
-  document.getElementById("overKicker").textContent = caught ? "被园丁追上了" : "药材篓翻了";
+  document.getElementById("rBest").textContent = "本机最高 " + best;
+  document.getElementById("overKicker").textContent = caught ? "被老张追上了" : "药材篓翻了";
 
   const v = document.getElementById("verdict");
   if (G.mode === "endless") {
     v.className = "badge pass"; v.textContent = "无尽模式 · 不计门槛";
   } else if (score >= CFG.threshold) {
     v.className = "badge pass";
-    v.textContent = "达标 " + score + " 分 · 可抽奖";
+    v.textContent = "达标 " + CFG.threshold + " · 可以抽奖了";
   } else {
     v.className = "badge fail";
-    v.textContent = "差 " + (CFG.threshold - score) + " 分，再来一次";
+    v.textContent = "差 " + (CFG.threshold - score) + " 分";
   }
   document.getElementById("over").classList.remove("hidden");
 }
@@ -671,15 +781,13 @@ function gameOver(caught) {
    转向 = 一直按住改变方向（左半屏 / 右半屏），横移速度恒定。
    参考游戏也是这样：只能改方向，不能瞬移到点击位置。
 */
-let dragging = false, lastTap = 0, steerDir = 0;
+let dragging = false, steerDir = 0;
 function sideOf(clientX) { return clientX < ST.x + ST.w / 2 ? -1 : 1; }
 cv.addEventListener("pointerdown", e => {
   audioReady();
   if (G.state !== "play") return;
   dragging = true;
   steerDir = sideOf(e.clientX);
-  const now = performance.now();
-  if (now - lastTap < 280) { doBoost(); lastTap = 0; } else lastTap = now;
 });
 cv.addEventListener("pointermove", e => {
   if (G.state !== "play" || !dragging) return;
@@ -694,32 +802,39 @@ window.addEventListener("keydown", e => {
   audioReady();
   if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " "].includes(e.key)) e.preventDefault();
   keys[e.key] = true;
-  if (e.key === "f" || e.key === "F" || e.key === " ") doBoost();
   if (e.key === "Escape" && G.state === "play") togglePause();
+  if (e.key === "m" || e.key === "M") toggleMute();
   if (e.key === "Enter" && G.state === "over") start(G.mode);
 });
 window.addEventListener("keyup", e => { keys[e.key] = false; });
 
-function doBoost() {
-  if (G.state !== "play" || G.boosts <= 0 || G.boostT > 0) return;
-  G.boosts--; G.boostT = CFG.boostTime;
-  sfx.boost(); updateBoostBtn();
+// 加速现在只来自地图上的「健步散」，吃到即触发
+function grantBoost() {
+  if (G.state !== "play") return;
+  G.boostT = CFG.boostTime;
+  sfx.boost();
 }
-function updateBoostBtn() {
-  // 每帧都被调用：只有数值变了才碰 DOM，否则会一直触发样式重算拖慢帧率
-  if (!boostEl) {
-    boostEl = document.getElementById("boost");
-    boostNumEl = boostEl.querySelector("b");
-  }
-  const key = G.boosts + "/" + (G.boostT > 0 ? 1 : 0);
-  if (key === boostLast) return;
-  boostLast = key;
-  boostNumEl.textContent = "×" + G.boosts;
-  boostEl.classList.toggle("off", G.boosts <= 0 || G.boostT > 0);
+
+// ---- 左右幽灵按钮 ----
+const padL = document.getElementById("padL");
+const padR = document.getElementById("padR");
+function showPads(on) {
+  const d = on ? "flex" : "none";
+  padL.style.display = d; padR.style.display = d;
 }
-document.getElementById("boost").addEventListener("pointerdown", e => {
-  e.stopPropagation(); doBoost();
+[[padL, -1], [padR, 1]].forEach(([el, dir]) => {
+  const down = e => {
+    e.preventDefault(); e.stopPropagation();
+    audioReady();
+    if (G.state === "play") { steerDir = dir; dragging = false; }
+  };
+  const up = e => { e.preventDefault(); if (steerDir === dir) steerDir = 0; };
+  el.addEventListener("pointerdown", down);
+  el.addEventListener("pointerup", up);
+  el.addEventListener("pointercancel", up);
+  el.addEventListener("pointerleave", up);
 });
+
 document.querySelectorAll("[data-mode]").forEach(b => {
   b.addEventListener("click", () => start(b.dataset.mode));
 });
@@ -728,7 +843,7 @@ document.getElementById("toMenu").addEventListener("click", () => {
   G.state = "menu";
   document.getElementById("over").classList.add("hidden");
   document.getElementById("menu").classList.remove("hidden");
-  document.getElementById("boost").style.display = "none";
+  showPads(false);
 });
 document.getElementById("pause").addEventListener("click", togglePause);
 function togglePause() {
@@ -827,17 +942,54 @@ function update(dt) {
   // 生成
   G.spawnHerbT -= dt;
   G.spawnRockT -= dt;
+  G.spawnBoostT -= dt;
+  G.spawnGateT -= dt;
   const hEvery = Math.max(CFG.herbEveryMin, CFG.herbEvery - G.t * 0.004);
-  const rEvery = Math.max(CFG.rockEveryMin, CFG.rockEvery - G.t * 0.012);
+  const rEvery = Math.max(CFG.rockEveryMin, CFG.rockEvery - G.t * 0.008);
   if (G.spawnHerbT <= 0) { spawnHerb(); G.spawnHerbT = hEvery * rand(0.8, 1.2); }
   if (G.spawnRockT <= 0) { spawnRock(); G.spawnRockT = rEvery * rand(0.85, 1.15); }
+  if (G.spawnBoostT <= 0) { spawnBoost(); G.spawnBoostT = CFG.boostEvery * rand(0.85, 1.25); }
+  if (G.spawnGateT <= 0) { spawnGate(); G.spawnGateT = CFG.gateEvery * rand(0.9, 1.2); }
 
   // 物件移动与碰撞
   const P = G.player;
+  G.stall = Math.max(0, G.stall - dt);
   for (let i = G.objs.length - 1; i >= 0; i--) {
     const o = G.objs[i];
     o.y -= sp * dt;
-    if (o.y < -80) { G.objs.splice(i, 1); continue; }
+    if (o.y < -120) { G.objs.splice(i, 1); continue; }
+
+    // 窄口：两段篱笆 + 中间一道缝
+    if (o.type === "gate") {
+      const inGap = Math.abs(P.x - o.x) < o.gapW / 2 - 4;
+      // 从缝里钻过去 → 园丁被卡一下
+      if (!o.passed && o.y <= P.y && o.y > P.y - 60) {
+        o.passed = true;
+        if (inGap) {
+          G.stall = CFG.stallTime;
+          if (G.chase.on) G.chase.y = Math.max(CFG.chaseMaxUp, G.chase.y - CFG.stallPush);
+          toast("园丁被篱笆卡住了！");
+          G.fx.push({ x: P.x, y: P.y - 30, txt: "卡住了", life: 1.1, color: "#3a6e4a" });
+          beep(300, 0.2, "triangle", 0.07, 180);
+        }
+      }
+      // 撞到两边任一段都算撞
+      if (G.inv <= 0) {
+        for (const seg of [o.left, o.right]) {
+          const dx = seg.x - P.x, dy = o.y - P.y;
+          const rr = seg.r + P.r * 0.7;
+          if (dx * dx + dy * dy <= rr * rr) {
+            G.lives--; G.inv = CFG.invincible; G.slowT = CFG.hurtSlowTime;
+            G.shake = 12; sfx.hit();
+            G.fx.push({ x: P.x, y: P.y - 20, txt: "-1", life: 0.9, color: "#b03a2e" });
+            if (G.lives <= 0) { gameOver(false); return; }
+            break;
+          }
+        }
+      }
+      continue;
+    }
+
     const dx = o.x - P.x, dy = o.y - P.y;
     const rr = (o.r + P.r * 0.7);
     if (dx * dx + dy * dy > rr * rr) continue;
@@ -845,6 +997,11 @@ function update(dt) {
       G.herbs++; G.herbPts += o.data.pts;
       G.fx.push({ x: o.x, y: o.y, txt: "+" + o.data.pts, life: 0.8, color: o.data.rare ? "#b03a2e" : "#3a6e4a" });
       o.data.rare ? sfx.rare() : sfx.pick();
+      G.objs.splice(i, 1);
+    } else if (o.type === "boost") {
+      grantBoost();
+      G.fx.push({ x: o.x, y: o.y, txt: "加速", life: 0.9, color: "#d98324" });
+      toast("健步散！跑快一点");
       G.objs.splice(i, 1);
     } else if (G.inv <= 0) {
       G.lives--; G.inv = CFG.invincible; G.slowT = CFG.hurtSlowTime;
@@ -858,15 +1015,20 @@ function update(dt) {
   // 追兵
   if (G.mode === "challenge") {
     if (!G.chase.on && G.t >= CFG.chaseStart) {
-      G.chase.on = true; G.chase.y = -150; sfx.bark();
-      if (G.mode === "challenge") toast("园丁放狗了！快跑");
+      G.chase.on = true; G.chase.y = -150; G.chase.x = P.x; sfx.bark();
+      toast("园丁放狗了！快跑");
     }
     if (G.chase.on) {
       // 狗跑自己的速度：跟玩家「基础速度」走，和冲刺/减速无关。
-      // 玩家冲刺时 sp 变大，(dogSp - sp) 变负，距离才真的拉得开。
+      // 玩家吃到健步散时 sp 变大，(dogSp - sp) 变负，距离才真的拉得开。
       const dogSp = CFG.baseSpeed * H * ramp
         * (CFG.chaseSpeed + CFG.chaseRamp * (G.t - CFG.chaseStart));
-      G.chase.y = Math.max(CFG.chaseMaxUp, G.chase.y + (dogSp - sp) * dt);
+      if (G.stall <= 0) {                       // 被卡住的时候完全停下
+        G.chase.y = Math.max(CFG.chaseMaxUp, G.chase.y + (dogSp - sp) * dt);
+      }
+      // 园丁和狗跟着玩家横向走，别一直站中线
+      const chaseStep = ST.w * 0.55 * dt;
+      G.chase.x += clamp(P.x - G.chase.x, -chaseStep, chaseStep);
       if (G.chase.y > P.y - 26) { gameOver(true); return; }
     }
   }
@@ -878,7 +1040,6 @@ function update(dt) {
     if (f.life <= 0) G.fx.splice(i, 1);
   }
   G.shake = Math.max(0, G.shake - dt * 40);
-  updateBoostBtn();
 }
 
 /* ---------- 渲染 ---------- */
@@ -917,6 +1078,22 @@ function render() {
         ctx.font = "600 11px system-ui,sans-serif"; ctx.textAlign = "center";
         ctx.fillStyle = INK; ctx.fillText(o.data.name, o.x, o.y + 32);
       }
+    } else if (o.type === "boost") {
+      // 健步散：金色光晕，和药材区分开
+      ctx.fillStyle = "rgba(217,131,36,.22)";
+      ctx.beginPath(); ctx.arc(o.x, o.y, 28 + Math.sin(G.t * 4) * 3, 0, 7); ctx.fill();
+      ctx.fillStyle = "rgba(70,90,65,.15)";
+      ctx.beginPath(); ctx.ellipse(o.x, o.y + 16, 14, 5, 0, 0, 7); ctx.fill();
+      ctx.drawImage(boostSprite(), Math.round(o.x - half),
+        Math.round(o.y + Math.sin(G.t * 3) * 2.5 - half), SPRITE, SPRITE);
+    } else if (o.type === "gate") {
+      const fs = rockSprite("fence");
+      ctx.drawImage(fs, Math.round(o.left.x - half), Math.round(o.y - half), SPRITE, SPRITE);
+      ctx.drawImage(fs, Math.round(o.right.x - half), Math.round(o.y - half), SPRITE, SPRITE);
+      // 缝里透一点光，告诉玩家"这里能过"
+      ctx.fillStyle = "rgba(255,253,248,.35)";
+      ctx.fillRect(Math.round(o.x - o.gapW / 2), Math.round(o.y - 6),
+        Math.round(o.gapW), 12);
     } else {
       ctx.drawImage(rockSprite(o.data.type), Math.round(o.x - half),
         Math.round(o.y - half), SPRITE, SPRITE);
@@ -980,7 +1157,6 @@ function autoSteer() {
     if (hb) tx = hb.x;
   }
   autoTargetX = clamp(tx, CFG.playPad, ST.w - CFG.playPad);
-  if (Math.random() < 0.02) doBoost();
 }
 
 if (AUTO) {
@@ -997,9 +1173,9 @@ if (AUTO) {
 /* ---------- 启动 ---------- */
 if (new URLSearchParams(location.search).get("dbg") === "1") {
   setTimeout(() => {
-    const r = document.getElementById("boost").getBoundingClientRect();
+    const r = document.getElementById("padR").getBoundingClientRect();
     document.title = JSON.stringify({ iw: innerWidth, ih: innerHeight, dpr: devicePixelRatio,
-      boost: [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)],
+      padR: [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)],
       stage: ST, scrollW: document.body.scrollWidth });
   }, 800);
 }
@@ -1017,6 +1193,10 @@ requestAnimationFrame(t => { last = t; loop(t); });
 </script>
 </body>
 </html>
+
+
+
+
 
 
 
