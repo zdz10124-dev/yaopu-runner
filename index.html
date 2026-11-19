@@ -178,9 +178,8 @@ const CFG = {
   chaseMaxUp: 0.10,       // 被甩开时最多退到屏幕高度这个比例处（不会退进 HUD 里）
   stallBase: 1.2,         // 窄口第一次卡住园丁的时长（秒）
   stallGrow: 0.02,        // 每过一秒，卡住时长再加这么多（越到后期卡得越久）
-  stallPush: 42,          // 卡住时把园丁往回推多少像素（刚好退到画面最上沿，不飞出屏幕）
-  stallRecover: 34,       // 挣脱后回来的速度（像素/秒）
-  snagSlow: 0.0,          // 被他挂住的窄口滚动速度倍率（0 = 停住不动）
+  recoverSpeed: 0.45,     // 挣脱后从画面上方追回来的速度（屏幕高/秒）
+
   pxPerMeter: 0.040,      // 多少屏幕高算 1 米
   lanes: 5,               // 生成时对齐的列数
 };
@@ -811,6 +810,13 @@ function drawChase() {
   ctx.translate((G.chase.x || ST.w / 2) + jig, G.chase.y);
   gardenerArt();
   ctx.restore();
+  if (G.chase.stuck) {                 // 标签挂在他头上，跟着他一起滚出画面
+    ctx.save();
+    ctx.font = "700 12px system-ui,sans-serif"; ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(58,110,74,.85)";
+    ctx.fillText("卡住", G.chase.x + jig, G.chase.y - 34);
+    ctx.restore();
+  }
 }
 
 // 结算页：把园丁放回来，三屏的叙事别断
@@ -1188,11 +1194,10 @@ function update(dt) {
   G.stall = Math.max(0, G.stall - dt);
   for (let i = G.objs.length - 1; i >= 0; i--) {
     const o = G.objs[i];
-    // 被园丁挂住的窄口会停住（他撞上以后这道篱笆被他拽住，滚不动）
-    const snagged = G.chase.stuck && o === G.chase.gate;
-    o.y -= sp * dt * (snagged ? CFG.snagSlow : 1);
+    o.y -= sp * dt;
     if (o.y < -120) {
-      if (o === G.chase.gate) { G.chase.gate = null; G.chase.stuck = false; }
+      // 篱笆滚出画面：卡住的计时还在走，只是他已经在画面外了
+      if (o === G.chase.gate) G.chase.gate = null;
       G.objs.splice(i, 1); continue;
     }
 
@@ -1269,28 +1274,32 @@ function update(dt) {
       if (G.t >= CFG.catchTime) { G.chase.stuck = false; G.chase.gate = null; G.stall = 0; }
       // —— 撞上窄口：那道篱笆滚到园丁脚下时才会真卡住，画面上人就在栅栏处 ——
       const gt = G.chase.gate;
-      if (gt && !G.chase.stuck && gt.y <= G.chase.y + 6) {
+      if (gt && !G.chase.stuck && gt.y <= G.chase.y + 6 && G.t < CFG.catchTime - 4) {
         G.chase.stuck = true;
         G.stall = CFG.stallBase + CFG.stallGrow * Math.max(0, G.t - CFG.chaseStart);
         toast("园丁被篱笆卡住了！");
         G.fx.push({ x: gt.x, y: gt.y + 30, txt: "卡住", life: 1.2, color: "#3a6e4a" });
         beep(300, 0.2, "triangle", 0.07, 180);
       }
-      if (G.chase.stuck && gt) {
-        // 挂在栅栏上：钉在缝口，纵向跟着这道篱笆（篱笆被他拽住，原地不动）
+      if (G.chase.stuck) {
+        // 挂在栅栏上 = 和栅栏保持相对静止（真·静止，不是屏幕静止）
+        // 场景在往上滚，所以他跟着栅栏一起被甩向画面顶部，正常滚出画面
         const st = ST.w * 1.6 * dt;
-        G.chase.x += clamp(gt.x - G.chase.x, -st, st);
-        G.chase.y += clamp(gt.y - 2 - G.chase.y, -H * 1.2 * dt, H * 1.2 * dt);
-        if (G.stall <= 0) {                 // 挣脱：篱笆重新滚走，他接着追
-          G.chase.stuck = false; G.chase.gate = null; G.chase.recover = 0.6;
+        if (gt) {
+          G.chase.x += clamp(gt.x - G.chase.x, -st, st);
+          G.chase.y = gt.y - 2;
+        }
+        if (G.stall <= 0) {                 // 挣脱：他从画面上方追回来
+          G.chase.stuck = false; G.chase.gate = null; G.chase.recover = 0.7;
         }
       } else {
         const dy = targetY - G.chase.y;
-        // 挣脱后头 0.6 秒慢慢爬回来，别瞬间弹回原位
-        const cap = G.chase.recover > 0 ? H * 0.45 : Infinity;
+        // 挣脱后不能瞬移回来：限速，让玩家看见他从画面上方追回来
+        const cap = G.chase.recover > 0 ? H * CFG.recoverSpeed : Infinity;
         const step = Math.min(Math.max(H * 0.12, Math.abs(dy) * 3), cap) * dt;
         G.chase.y += clamp(dy, -step, step);
-        G.chase.y = Math.max(H * CFG.chaseMaxUp, G.chase.y);   // 别退进 HUD 里
+        // 正常跟随时不许退进 HUD 里（回追途中不管，他本来就在画面外上面）
+        if (G.chase.recover <= 0) G.chase.y = Math.max(H * CFG.chaseMaxUp, G.chase.y);
         G.chase.recover = Math.max(0, G.chase.recover - dt);
         const st = ST.w * 0.55 * dt;
         G.chase.x += clamp(P.x - G.chase.x, -st, st);
@@ -1356,14 +1365,12 @@ function render() {
       ctx.fillStyle = "#a0571f"; ctx.fillText("加速", o.x, o.y + 30);
     } else if (o.type === "gate") {
       const fs = rockSprite("fence");
-      // 被园丁挂住时篱笆跟着他一颠一颠，玩家看得出"这块栅栏卡死了"
-      const gjig = (G.chase.stuck && G.chase.gate === o) ? Math.sin(G.t * 38) * 2.5 : 0;
       ctx.fillStyle = "rgba(60,80,55,.16)";
       for (const seg of [o.left, o.right]) {
-        ctx.beginPath(); ctx.ellipse(seg.x + gjig, o.y + 14, 22, 6.5, 0, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(seg.x, o.y + 14, 22, 6.5, 0, 0, 7); ctx.fill();
       }
-      ctx.drawImage(fs, Math.round(o.left.x + gjig - half), Math.round(o.y - half), SPRITE, SPRITE);
-      ctx.drawImage(fs, Math.round(o.right.x + gjig - half), Math.round(o.y - half), SPRITE, SPRITE);
+      ctx.drawImage(fs, Math.round(o.left.x - half), Math.round(o.y - half), SPRITE, SPRITE);
+      ctx.drawImage(fs, Math.round(o.right.x - half), Math.round(o.y - half), SPRITE, SPRITE);
       // 缝口画两道向内的小箭头，提示"这儿能钻过去"
       ctx.strokeStyle = "rgba(58,110,74,.55)"; ctx.lineWidth = 2.5; ctx.lineCap = "round";
       const ay = Math.round(o.y);
