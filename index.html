@@ -171,14 +171,24 @@ const CFG = {
   gateEvery: 11,          // 窄口多久出现一次
   gateGap: 340,           // 窄口前后至少隔多少像素（比普通物件更宽）
   chaseStart: 58,         // 第几秒放狗
-  chaseSpeed: 1.012,      // 狗自己的速度 = 玩家基础速度 × 这个（与加速无关）
-  chaseRamp: 0.0022,      // 狗每秒再凶一点
+  catchTime: 100,         // 第几秒一定会被追上（固定，不受窄口影响）
   chaseMaxUp: -220,       // 被甩开时最多退到多高
-  stallTime: 1.4,         // 从窄口挤过去，能把园丁卡住多久（秒）
-  stallPush: 90,          // 卡住时把园丁往回推多少像素
+  stallBase: 1.2,         // 窄口第一次卡住园丁的时长（秒）
+  stallGrow: 0.02,        // 每过一秒，卡住时长再加这么多（越到后期卡得越久）
+  stallPush: 55,          // 卡住时把园丁往回推多少像素（刚好退出半个身位，不飞出屏幕）
   pxPerMeter: 0.040,      // 多少屏幕高算 1 米
   lanes: 5,               // 生成时对齐的列数
 };
+
+/* 窄口可行性的数学依据（为什么不会被逼死）：
+   1) 障碍物之间至少隔 itemGap(210px)，窄口前后隔 gateGap(340px)
+      —— 按 400px/s 算就是 0.85 秒反应时间，足够侧移一次；
+   2) 窄口净宽 84px 起步：玩家碰撞半径 16.8px + 篱笆 26px，
+      实际可站窗口 = 84/2 + 26 - 42.8 ≈ ±29px，永远过得去；
+   3) 园丁按时间线性推进，第 catchTime 秒追上，与窄口触发次数无关
+      —— 所以窄口只影响画面（卡住时长随秒数增长），不会造成必然失败，
+         也不会让玩家无限续命。
+*/
 
 const HERBS = [
   { name: "枸杞", pts: 50, kind: "berry",  color: "#c0392b" },
@@ -435,7 +445,7 @@ const G = {
   objs: [],             // 地上物件 {x,y,type,...}
   fx: [],               // 飘字
   player: { x: 0, y: 0, dir: 0, r: 24, phase: 0 },
-  chase: { on: false, y: -200, x: 0, dogPhase: 0 },
+  chase: { on: false, y: -200, x: 0, dogPhase: 0, xLocked: false, xTarget: 0, pending: 0 },
   warned: false,
   fps: 60,
 };
@@ -935,7 +945,7 @@ function start(mode) {
   G.spawnBoostT = CFG.boostEvery; G.spawnGateT = CFG.gateEvery + 6;
   G.obstacleGapLeft = 0;
   G.objs.length = 0; G.fx.length = 0;
-  G.chase = { on: false, y: -160, x: ST.w / 2, dogPhase: 0 };
+  G.chase = { on: false, y: -160, x: ST.w / 2, dogPhase: 0, xLocked: false, xTarget: 0, pending: 0 };
   G.warned = false;
   G.player.x = ST.w / 2; G.player.dir = 0; G.player.y = Math.round(H * 0.30);
   document.getElementById("menu").classList.add("hidden");
@@ -946,6 +956,7 @@ function start(mode) {
 }
 function gameOver(caught) {
   G.state = "over";
+  padHeld.length = 0; canvasDir = 0;
   sfx.over();
   showPads(false);
   const score = Math.floor(G.meters) + G.herbPts;
@@ -976,19 +987,31 @@ function gameOver(caught) {
    转向 = 一直按住改变方向（左半屏 / 右半屏），横移速度恒定。
    参考游戏也是这样：只能改方向，不能瞬移到点击位置。
 */
-let dragging = false, steerDir = 0;
+let dragging = false, canvasDir = 0;
+// 两个侧边按钮可以同时按住：最后按下的那个说了算，松开它就回到还按着的那个。
+const padHeld = [];
+function padDir() { return padHeld.length ? padHeld[padHeld.length - 1].dir : 0; }
+function holdPad(id, dir) {
+  const i = padHeld.findIndex(p => p.id === id);
+  if (i >= 0) padHeld.splice(i, 1);
+  padHeld.push({ id, dir });
+}
+function releasePad(id) {
+  const i = padHeld.findIndex(p => p.id === id);
+  if (i >= 0) padHeld.splice(i, 1);
+}
 function sideOf(clientX) { return clientX < ST.x + ST.w / 2 ? -1 : 1; }
 cv.addEventListener("pointerdown", e => {
   audioReady();
   if (G.state !== "play") return;
   dragging = true;
-  steerDir = sideOf(e.clientX);
+  canvasDir = sideOf(e.clientX);
 });
 cv.addEventListener("pointermove", e => {
   if (G.state !== "play" || !dragging) return;
-  steerDir = sideOf(e.clientX);
+  canvasDir = sideOf(e.clientX);
 });
-function endSteer() { dragging = false; steerDir = 0; }
+function endSteer() { dragging = false; canvasDir = 0; }
 window.addEventListener("pointerup", endSteer);
 window.addEventListener("pointercancel", endSteer);
 
@@ -1021,9 +1044,9 @@ function showPads(on) {
   const down = e => {
     e.preventDefault(); e.stopPropagation();
     audioReady();
-    if (G.state === "play") { steerDir = dir; dragging = false; }
+    if (G.state === "play") { holdPad(el.id, dir); dragging = false; canvasDir = 0; }
   };
-  const up = e => { e.preventDefault(); if (steerDir === dir) steerDir = 0; };
+  const up = e => { e.preventDefault(); releasePad(el.id); };
   el.addEventListener("pointerdown", down);
   el.addEventListener("pointerup", up);
   el.addEventListener("pointercancel", up);
@@ -1124,7 +1147,7 @@ function update(dt) {
 
   // 转向：按住才改变方向，横移速度恒定
   const kx = (keys.ArrowRight || keys.d || keys.D ? 1 : 0) - (keys.ArrowLeft || keys.a || keys.A ? 1 : 0);
-  let dir = kx || steerDir;
+  let dir = kx || padDir() || canvasDir;
   if (AUTO && autoTargetX != null) {
     dir = Math.abs(autoTargetX - G.player.x) < 5 ? 0 : Math.sign(autoTargetX - G.player.x);
   }
@@ -1166,15 +1189,16 @@ function update(dt) {
     // 窄口：两段篱笆 + 中间一道缝
     if (o.type === "gate") {
       const inGap = Math.abs(P.x - o.x) < o.gapW / 2 - 4;
-      // 从缝里钻过去 → 园丁被卡一下
+      // 从缝里钻过去 → 把园丁引到这道缝上卡住
       if (!o.passed && o.y <= P.y && o.y > P.y - 60) {
         o.passed = true;
-        if (inGap && G.chase.on) {          // 园丁还没出来时，钻这个口子没有任何意义
-          G.stall = CFG.stallTime;
-          G.chase.y = Math.max(CFG.chaseMaxUp, G.chase.y - CFG.stallPush);
-          toast("园丁被篱笆卡住了！");
-          G.fx.push({ x: P.x, y: P.y - 30, txt: "卡住了", life: 1.1, color: "#3a6e4a" });
-          beep(300, 0.2, "triangle", 0.07, 180);
+        const visible = G.chase.on && G.chase.y > -20;      // 园丁必须在屏幕里
+        const busy = G.stall > 0 || G.chase.pending > 0;    // 卡住期间不重复触发
+        if (inGap && visible && !busy) {
+          // 锁住横向，让他走到窄口处再触发（0.35 秒后到位）
+          G.chase.xLocked = true;
+          G.chase.xTarget = o.x;
+          G.chase.pending = 0.35;
         }
       }
       // 撞到两边任一段都算撞
@@ -1223,16 +1247,35 @@ function update(dt) {
       toast("园丁放狗了！快跑");
     }
     if (G.chase.on) {
-      // 狗跑自己的速度：跟玩家「基础速度」走，和冲刺/减速无关。
-      // 玩家吃到健步散时 sp 变大，(dogSp - sp) 变负，距离才真的拉得开。
-      const dogSp = CFG.baseSpeed * H * ramp
-        * (CFG.chaseSpeed + CFG.chaseRamp * (G.t - CFG.chaseStart));
-      if (G.stall <= 0) {                       // 被卡住的时候完全停下
-        G.chase.y = Math.max(CFG.chaseMaxUp, G.chase.y + (dogSp - sp) * dt);
+      // 进度按时间线性推进，所以「第 catchTime 秒被追上」是固定的：
+      // 窄口只会让他暂时落后（画面可见），之后自动加速补回来，不改变判定时间。
+      const prog = clamp((G.t - CFG.chaseStart) / (CFG.catchTime - CFG.chaseStart), 0, 1);
+      const targetY = lerp(-150, P.y - 18, prog);
+      if (G.stall <= 0) {
+        const dy = targetY - G.chase.y;
+        const step = Math.max(H * 0.12, Math.abs(dy) * 3) * dt;   // 落后越多追得越快
+        G.chase.y += clamp(dy, -step, step);
       }
-      // 园丁和狗跟着玩家横向走，别一直站中线
-      const chaseStep = ST.w * 0.55 * dt;
-      G.chase.x += clamp(P.x - G.chase.x, -chaseStep, chaseStep);
+      // 触发时效：卡住期间不会重复触发
+      if (G.chase.pending > 0) {
+        G.chase.pending -= dt;
+        if (G.chase.pending <= 0) {
+          G.stall = CFG.stallBase + CFG.stallGrow * Math.max(0, G.t - CFG.chaseStart);
+          G.chase.y = Math.max(CFG.chaseMaxUp, G.chase.y - CFG.stallPush);
+          toast("园丁被篱笆卡住了！");
+          G.fx.push({ x: G.chase.x, y: G.chase.y - 20, txt: "卡住", life: 1.1, color: "#3a6e4a" });
+          beep(300, 0.2, "triangle", 0.07, 180);
+        }
+      }
+      // 横向：被卡时锁在窄口那道缝上，其余时间跟着玩家
+      if (G.chase.xLocked) {
+        const st = ST.w * 1.4 * dt;
+        G.chase.x += clamp(G.chase.xTarget - G.chase.x, -st, st);
+      } else {
+        const st = ST.w * 0.55 * dt;
+        G.chase.x += clamp(P.x - G.chase.x, -st, st);
+      }
+      if (G.stall <= 0 && G.chase.pending <= 0 && G.chase.xLocked) G.chase.xLocked = false;
       if (G.chase.y > P.y - 26) { gameOver(true); return; }
     }
   }
@@ -1409,6 +1452,11 @@ requestAnimationFrame(t => { last = t; loop(t); });
 </script>
 </body>
 </html>
+
+
+
+
+
 
 
 
