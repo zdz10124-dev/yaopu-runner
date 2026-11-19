@@ -179,7 +179,8 @@ const CFG = {
   stallBase: 1.2,         // 窄口第一次卡住园丁的时长（秒）
   stallGrow: 0.02,        // 每过一秒，卡住时长再加这么多（越到后期卡得越久）
   stallPush: 42,          // 卡住时把园丁往回推多少像素（刚好退到画面最上沿，不飞出屏幕）
-  stallRecover: 34,       // 被他挣脱回来的速度（像素/秒），推出去多远都会平滑收回
+  stallRecover: 34,       // 挣脱后回来的速度（像素/秒）
+  snagSlow: 0.0,          // 被他挂住的窄口滚动速度倍率（0 = 停住不动）
   pxPerMeter: 0.040,      // 多少屏幕高算 1 米
   lanes: 5,               // 生成时对齐的列数
 };
@@ -449,7 +450,7 @@ const G = {
   objs: [],             // 地上物件 {x,y,type,...}
   fx: [],               // 飘字
   player: { x: 0, y: 0, dir: 0, r: 24, phase: 0 },
-  chase: { on: false, y: -200, y0: -200, x: 0, dogPhase: 0, xLocked: false, xTarget: 0, pending: 0, push: 0 },
+  chase: { on: false, y: -200, y0: -200, x: 0, dogPhase: 0, gate: null, stuck: false, recover: 0 }, 
   warned: false,
   fps: 60,
 };
@@ -949,7 +950,7 @@ function start(mode) {
   G.spawnBoostT = CFG.boostEvery; G.spawnGateT = CFG.gateEvery + 6;
   G.obstacleGapLeft = 0;
   G.objs.length = 0; G.fx.length = 0;
-  G.chase = { on: false, y: -160, y0: -160, x: ST.w / 2, dogPhase: 0, xLocked: false, xTarget: 0, pending: 0, push: 0 };
+  G.chase = { on: false, y: -160, y0: -160, x: ST.w / 2, dogPhase: 0, gate: null, stuck: false, recover: 0 };
   G.warned = false;
   G.player.x = ST.w / 2; G.player.dir = 0; G.player.y = Math.round(H * 0.30);
   document.getElementById("menu").classList.add("hidden");
@@ -1187,8 +1188,13 @@ function update(dt) {
   G.stall = Math.max(0, G.stall - dt);
   for (let i = G.objs.length - 1; i >= 0; i--) {
     const o = G.objs[i];
-    o.y -= sp * dt;
-    if (o.y < -120) { G.objs.splice(i, 1); continue; }
+    // 被园丁挂住的窄口会停住（他撞上以后这道篱笆被他拽住，滚不动）
+    const snagged = G.chase.stuck && o === G.chase.gate;
+    o.y -= sp * dt * (snagged ? CFG.snagSlow : 1);
+    if (o.y < -120) {
+      if (o === G.chase.gate) { G.chase.gate = null; G.chase.stuck = false; }
+      G.objs.splice(i, 1); continue;
+    }
 
     // 窄口：两段篱笆 + 中间一道缝
     if (o.type === "gate") {
@@ -1196,13 +1202,11 @@ function update(dt) {
       // 从缝里钻过去 → 把园丁引到这道缝上卡住
       if (!o.passed && o.y <= P.y && o.y > P.y - 60) {
         o.passed = true;
-        const visible = G.chase.on && G.chase.y > -20;      // 园丁必须在屏幕里
-        const busy = G.stall > 0 || G.chase.pending > 0;    // 卡住期间不重复触发
+        const visible = G.chase.on && G.chase.y > -20;                  // 园丁必须在屏幕里
+        const busy = G.stall > 0 || G.chase.stuck || G.chase.gate;      // 卡住期间不重复触发
         if (inGap && visible && !busy) {
-          // 锁住横向，让他走到窄口处再触发（0.35 秒后到位）
-          G.chase.xLocked = true;
-          G.chase.xTarget = o.x;
-          G.chase.pending = 0.35;
+          // 只记下这道窄口：等它自己滚到园丁脚下，他撞上了才算卡住
+          G.chase.gate = o;
         }
       }
       // 撞到两边任一段都算撞
@@ -1261,36 +1265,36 @@ function update(dt) {
       const k = clamp((prog - CFG.chaseRush) / (1 - CFG.chaseRush), 0, 1);
       const targetY = lerp(G.chase.y0, P.y - 18, k * k * k * k)
         + Math.sin(G.t * 5.2) * CFG.chaseBump;
-      if (G.stall <= 0) {
-        const dy = targetY - G.chase.push - G.chase.y;
-        const step = Math.max(H * 0.12, Math.abs(dy) * 3) * dt;   // 落后越多追得越快
-        G.chase.y += clamp(dy, -step, step);
+      // 时间到点：挣脱一切，直接扑上来（保证"第 catchTime 秒被追上"是死的）
+      if (G.t >= CFG.catchTime) { G.chase.stuck = false; G.chase.gate = null; G.stall = 0; }
+      // —— 撞上窄口：那道篱笆滚到园丁脚下时才会真卡住，画面上人就在栅栏处 ——
+      const gt = G.chase.gate;
+      if (gt && !G.chase.stuck && gt.y <= G.chase.y + 6) {
+        G.chase.stuck = true;
+        G.stall = CFG.stallBase + CFG.stallGrow * Math.max(0, G.t - CFG.chaseStart);
+        toast("园丁被篱笆卡住了！");
+        G.fx.push({ x: gt.x, y: gt.y + 30, txt: "卡住", life: 1.2, color: "#3a6e4a" });
+        beep(300, 0.2, "triangle", 0.07, 180);
       }
-      G.chase.y = Math.max(H * CFG.chaseMaxUp, G.chase.y);   // 别退进 HUD 里
-      // 被窄口推出去的那一段平滑收回，不是瞬间弹回
-      if (G.chase.push > 0 && G.stall <= 0) {
-        G.chase.push = Math.max(0, G.chase.push - CFG.stallRecover * dt);
-      }
-      // 触发时效：卡住期间不会重复触发
-      if (G.chase.pending > 0) {
-        G.chase.pending -= dt;
-        if (G.chase.pending <= 0) {
-          G.stall = CFG.stallBase + CFG.stallGrow * Math.max(0, G.t - CFG.chaseStart);
-          G.chase.push = CFG.stallPush;
-          toast("园丁被篱笆卡住了！");
-          G.fx.push({ x: G.chase.x, y: G.chase.y - 20, txt: "卡住", life: 1.1, color: "#3a6e4a" });
-          beep(300, 0.2, "triangle", 0.07, 180);
+      if (G.chase.stuck && gt) {
+        // 挂在栅栏上：钉在缝口，纵向跟着这道篱笆（篱笆被他拽住，原地不动）
+        const st = ST.w * 1.6 * dt;
+        G.chase.x += clamp(gt.x - G.chase.x, -st, st);
+        G.chase.y += clamp(gt.y - 2 - G.chase.y, -H * 1.2 * dt, H * 1.2 * dt);
+        if (G.stall <= 0) {                 // 挣脱：篱笆重新滚走，他接着追
+          G.chase.stuck = false; G.chase.gate = null; G.chase.recover = 0.6;
         }
-      }
-      // 横向：被卡时锁在窄口那道缝上，其余时间跟着玩家
-      if (G.chase.xLocked) {
-        const st = ST.w * 1.4 * dt;
-        G.chase.x += clamp(G.chase.xTarget - G.chase.x, -st, st);
       } else {
+        const dy = targetY - G.chase.y;
+        // 挣脱后头 0.6 秒慢慢爬回来，别瞬间弹回原位
+        const cap = G.chase.recover > 0 ? H * 0.45 : Infinity;
+        const step = Math.min(Math.max(H * 0.12, Math.abs(dy) * 3), cap) * dt;
+        G.chase.y += clamp(dy, -step, step);
+        G.chase.y = Math.max(H * CFG.chaseMaxUp, G.chase.y);   // 别退进 HUD 里
+        G.chase.recover = Math.max(0, G.chase.recover - dt);
         const st = ST.w * 0.55 * dt;
         G.chase.x += clamp(P.x - G.chase.x, -st, st);
       }
-      if (G.stall <= 0 && G.chase.pending <= 0 && G.chase.xLocked) G.chase.xLocked = false;
       if (G.chase.y > P.y - 26) { gameOver(true); return; }
     }
   }
@@ -1352,12 +1356,14 @@ function render() {
       ctx.fillStyle = "#a0571f"; ctx.fillText("加速", o.x, o.y + 30);
     } else if (o.type === "gate") {
       const fs = rockSprite("fence");
+      // 被园丁挂住时篱笆跟着他一颠一颠，玩家看得出"这块栅栏卡死了"
+      const gjig = (G.chase.stuck && G.chase.gate === o) ? Math.sin(G.t * 38) * 2.5 : 0;
       ctx.fillStyle = "rgba(60,80,55,.16)";
       for (const seg of [o.left, o.right]) {
-        ctx.beginPath(); ctx.ellipse(seg.x, o.y + 14, 22, 6.5, 0, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(seg.x + gjig, o.y + 14, 22, 6.5, 0, 0, 7); ctx.fill();
       }
-      ctx.drawImage(fs, Math.round(o.left.x - half), Math.round(o.y - half), SPRITE, SPRITE);
-      ctx.drawImage(fs, Math.round(o.right.x - half), Math.round(o.y - half), SPRITE, SPRITE);
+      ctx.drawImage(fs, Math.round(o.left.x + gjig - half), Math.round(o.y - half), SPRITE, SPRITE);
+      ctx.drawImage(fs, Math.round(o.right.x + gjig - half), Math.round(o.y - half), SPRITE, SPRITE);
       // 缝口画两道向内的小箭头，提示"这儿能钻过去"
       ctx.strokeStyle = "rgba(58,110,74,.55)"; ctx.lineWidth = 2.5; ctx.lineCap = "round";
       const ay = Math.round(o.y);
@@ -1404,10 +1410,23 @@ function render() {
 const AUTO = new URLSearchParams(location.search).get("auto") === "1";
 const WARP = +(new URLSearchParams(location.search).get("warp") || 0);
 const STAY = new URLSearchParams(location.search).get("stay") === "1";
+const HOLD = new URLSearchParams(location.search).get("hold") === "1";
+// ?seed=N —— 开发用：固定随机数，同一 seed 每次跑到同一帧
+const SEED = new URLSearchParams(location.search).get("seed");
+if (SEED) {
+  let s = (+SEED || 1) & 0x7fffffff;
+  Math.random = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+}
 let autoTargetX = null;
 
 function autoSteer() {
   const P = G.player;
+  // 窄口优先：从缝里钻过去（自动驾驶也只做正常人会做的事）
+  for (const g of G.objs) {
+    if (g.type !== "gate") continue;
+    const dy = g.y - P.y;
+    if (dy > -12 && dy < 260) { autoTargetX = clamp(g.x, CFG.playPad, ST.w - CFG.playPad); return; }
+  }
   let best = null, bestD = 1e9;
   for (const o of G.objs) {
     if (o.type !== "rock") continue;
@@ -1463,7 +1482,8 @@ if (WARP > 0) {
     update(1 / 60);
   }
 }
-requestAnimationFrame(t => { last = t; loop(t); });
+if (HOLD) { render(); }            // ?hold=1：停在 warp 那一帧，方便截图
+else requestAnimationFrame(t => { last = t; loop(t); });
 </script>
 </body>
 </html>
