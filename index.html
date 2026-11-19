@@ -29,9 +29,8 @@
   .kicker{font-size:11.5px;letter-spacing:.1em;color:#b03a2e;margin:0 0 10px}
   h1{font-family:"STKaiti","KaiTi","Songti SC",serif;font-size:clamp(46px,15vw,64px);
      letter-spacing:.06em;line-height:1.1;transform:rotate(-1.5deg);margin:0 0 2px}
-  h1::after{content:"";display:block;width:104px;height:2px;margin-top:8px;
-    background:#2c342e;opacity:.35;transform:rotate(-.6deg)}
-  .sub{color:#5d675f;font-size:13px;line-height:1.95;margin:0}
+
+  .sub{color:#5d675f;font-size:12.5px;line-height:1.9;margin:0;letter-spacing:.01em}
   .btns{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
   button{font:inherit;font-size:16.5px;padding:12px 26px;border-radius:10px;
     border:1.5px solid #2c342e;background:#fffdf8;color:#2c342e;cursor:pointer;
@@ -41,6 +40,7 @@
   button.ghost{background:transparent;box-shadow:none;border-color:#a9b09c;color:#4d564b;font-size:14.5px}
   .tips{margin-top:16px;font-size:11.5px;color:#8a9187;line-height:1.9}
   .credit{margin-top:10px;font-size:10.5px;color:#b3ab97;letter-spacing:.02em}
+  .kbhint{margin-top:10px;font-size:10.5px;color:#a8a293}
   .howto{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
   .howto span{font-size:11.5px;color:#5d675f;border-bottom:1.5px solid rgba(176,58,46,.35);
     padding:0 2px 2px}
@@ -77,12 +77,12 @@
   .pad:active{transform:translateY(-50%)}          /* 抵消全局 button:active 的位移 */
   .pad:active span{background:rgba(249,246,239,.9);transform:scale(.94)}
   #padL{left:2px} #padR{right:2px}
-  #toast{position:fixed;left:50%;top:16%;transform:translateX(-50%) rotate(-1.2deg);
+  #toast{position:fixed;left:50%;bottom:22px;top:auto;transform:translateX(-50%) rotate(-1.2deg);
     background:#a8574a;color:#fdf6ec;padding:8px 18px;border-radius:3px;
     font-size:14px;letter-spacing:.02em;opacity:0;transition:opacity .25s;z-index:8;pointer-events:none;
     box-shadow:2px 3px 0 rgba(0,0,0,.12)}
-  #toast::after{content:"";position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);
-    border-left:8px solid transparent;border-right:8px solid transparent;border-top:8px solid #a8574a}
+  #toast::after{content:"";position:absolute;left:50%;top:-7px;transform:translateX(-50%);
+    border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:8px solid #a8574a}
 </style>
 </head>
 <body>
@@ -98,23 +98,21 @@
 
 <div id="menu" class="screen">
   <div class="poster">
-    <p class="kicker">中国农业大学 · 东区试验田　元旦晚会</p>
+    <p class="kicker">中国农业大学 · 东区试验田 · 元旦晚会</p>
     <h1>药圃跑酷</h1>
     <div class="poster-row">
       <canvas id="hero" width="380" height="520"></canvas>
       <div class="poster-main">
-        <p class="sub">按住屏幕左右转向<br>收药材，别撞石头<br>58 秒后园丁放狗追你<br>钻篱笆缝能把园丁卡住</p>
+        <p class="sub">按住左右转向，采药<br>石头木桶别撞，少一颗心<br>46 秒后园丁放狗<br>钻篱笆缝能把他卡住</p>
       </div>
     </div>
     <div class="btns">
       <button class="main" data-mode="challenge">开始采药</button>
       <button class="ghost" data-mode="endless">无尽模式</button>
     </div>
-    <p class="tips">电脑：按住 ← → 或 A/D　·　M 静音<br>赶在霜冻前把药收完——别踩了师兄的样方</p>
-    <p class="credit">第 3 摊 · 12.31　｜　BGM：Chinese Chickens (CC-BY 3.0)</p>
-    <div class="howto">
-      <span>药材 +50</span><span>灵芝 / 人参 +200</span><span>满 2027 分可抽奖</span>
-    </div>
+    <p class="tips">赶在霜冻前把药收完——别踩了师兄的样方</p>
+    <p class="kbhint">电脑：← → 或 A / D 转向，M 静音</p>
+    <p class="credit">第 3 摊 · 12.31　BGM：Chinese Chickens（CC-BY 3.0）</p>
     <div class="stamp">第三摊<br>药圃</div>
   </div>
 </div>
@@ -507,29 +505,77 @@ function buildGroundTile() {
   const g = c.getContext("2d");
   g.setTransform(DPR, 0, 0, DPR, 0, 0);
   g.fillStyle = "#eef3e2"; g.fillRect(0, 0, ST.w, TILE_H);
-  for (let i = 0; i < BANDS_PER_TILE; i++) {
-    const y = i * BAND;
-    g.fillStyle = (i % 2 === 0) ? "#e2ecd2" : "#eaf1dd";
-    g.fillRect(0, y, ST.w, BAND);
-    // 垄沟：加一点抖动，避免完美正弦的"程序味"
-    g.strokeStyle = "rgba(120,140,110,.32)"; g.lineWidth = 2.5;
-    g.lineCap = "round"; g.lineJoin = "round";
+
+  // 垄是竖的：人顺着垄沟往前跑，所以垄线应该跟跑动方向平行
+  // 垄宽故意不等（74~112），像人工推出来的，不像贴图阵列
+  const rows = [];
+  for (let x = -46; x < ST.w + 60;) {
+    const w = 74 + ((Math.abs(x) * 7919) % 39);
+    rows.push({ x, w });
+    x += w;
+  }
+  for (let i = 0; i < rows.length; i++) {
+    // 垄面：一条亮一条暗，明暗差要大一点才看得出"这是一垄一垄的地"
+    g.fillStyle = i % 2 ? "#d9e7c3" : "#e9f0d9";
+    g.fillRect(rows[i].x, 0, rows[i].w, TILE_H);
+    // 垄上土色：靠垄脊渐深，像被踩实的沟
+    const gr = g.createLinearGradient(rows[i].x, 0, rows[i].x + rows[i].w, 0);
+    gr.addColorStop(0, "rgba(168,158,120,.2)");
+    gr.addColorStop(.5, "rgba(176,168,132,0)");
+    gr.addColorStop(1, "rgba(168,158,120,.2)");
+    g.fillStyle = gr; g.fillRect(rows[i].x, 0, rows[i].w, TILE_H);
+  }
+  // 垄脊：竖向波浪线，周期整除瓦片高度，接缝看不出来
+  g.lineCap = "round"; g.lineJoin = "round";
+  for (let i = 0; i < rows.length; i++) {
+    const bx = rows[i].x, heavy = i % 3 === 0;
+    g.strokeStyle = heavy ? "rgba(112,134,96,.52)" : "rgba(112,134,96,.34)";
+    g.lineWidth = heavy ? 3.4 : 2.4;
     g.beginPath();
-    for (let x = -10; x <= ST.w + 10; x += 26) {
-      const jit = ((x * 13 + i * 29) % 7) - 3;
-      const yy = y + 4 + Math.sin((x + i * 37) * 0.045) * 3 + jit * 0.8;
-      x === -10 ? g.moveTo(x, yy) : g.lineTo(x, yy);
+    for (let y = -16; y <= TILE_H + 16; y += 20) {
+      const xx = bx
+        + Math.sin(y / TILE_H * Math.PI * 6 + i) * 3.4
+        + Math.sin(y / TILE_H * Math.PI * 14 + i * 2) * 1.1;
+      y === -16 ? g.moveTo(xx, y) : g.lineTo(xx, y);
     }
     g.stroke();
-    // 垄上杂草：密度降到 1/3，颜色压淡，别跟药材抢视线
-    if (i % 3 === 0) {
-      const r1 = ((i * 137) % 97) / 97;
-      grassOn(g, 40 + r1 * Math.max(20, ST.w - 80), y + BAND * 0.58, 0.8);
+  }
+  // 垄上种的东西：每垄沿中线点两排小苗，滚动时才看得出地在动
+  for (let i = 0; i < rows.length; i++) {
+    if (i % 2) continue;                       // 隔一垄种一垄，别排成阵列
+    const cx = rows[i].x + rows[i].w * 0.5;
+    for (let s = 0; s < 3; s++) {
+      if ((i * 7 + s * 5) % 4 === 0) continue;  // 缺株，手种的地不会满
+      const yy = (s + 0.4) * (TILE_H / 3) + ((i * 53 + s * 29) % 31) - 15;
+      const xx = cx + ((i * 37 + s * 71) % 19) - 9;
+      g.strokeStyle = "rgba(84,116,72,.62)"; g.lineWidth = 2.4; g.lineCap = "round";
+      g.beginPath();
+      g.moveTo(xx, yy + 5); g.quadraticCurveTo(xx - 5, yy - 1, xx - 4, yy - 6);
+      g.moveTo(xx, yy + 5); g.quadraticCurveTo(xx + 5, yy - 1, xx + 4, yy - 5);
+      g.stroke();
+    }
+  }
+  // 垄沟里的细节：杂草、土块、碎秸秆 —— 这些才是滚动感的来源
+  for (let i = 0; i < BANDS_PER_TILE; i++) {
+    const by = i * BAND;
+    for (let k = 0; k < 4; k++) {
+      const hx = ((i * 173 + k * 211) % 997) / 997 * ST.w;
+      const hy = by + ((i * 97 + k * 149) % 991) / 991 * BAND;
+      if (k === 0) grassOn(g, hx, hy, 0.72 + (i % 3) * 0.1);
+      else if (k === 1) {
+        g.fillStyle = "rgba(150,138,110,.34)";
+        g.beginPath(); g.ellipse(hx, hy, 4.2, 2.6, 0.4, 0, 7); g.fill();
+      } else {
+        g.strokeStyle = "rgba(160,142,96,.42)"; g.lineWidth = 1.8;
+        g.beginPath();
+        g.moveTo(hx, hy); g.lineTo(hx + 5 - (k * 2), hy - 5);
+        g.stroke();
+      }
     }
     // 纸纹颗粒
-    for (let d = 0; d < 26; d++) {
+    for (let d = 0; d < 22; d++) {
       const px = ((i * 73 + d * 37) % 1000) / 1000 * ST.w;
-      const py = y + ((i * 61 + d * 91) % 1000) / 1000 * BAND;
+      const py = by + ((i * 61 + d * 91) % 1000) / 1000 * BAND;
       g.fillStyle = d % 3 ? "rgba(120,110,90,.05)" : "rgba(90,80,60,.07)";
       g.fillRect(px, py, 1.6, 1.6);
     }
@@ -781,26 +827,46 @@ function rockArt(o) {
 /* ---------- 追兵 ---------- */
 // 园丁 + 狗的画法抽出来，追兵和结算页共用
 function gardenerArt(withDog) {
-  // 狗
+  const bob = Math.sin(G.t * 14) * 2.4;
+  // 狗：得看得出是狗 —— 四条腿、尾巴、竖起来的耳朵，还要牵绳
   if (withDog !== false) {
-  ctx.save(); ctx.translate(-52, 6 + Math.sin(G.t * 14) * 3);
-  ink(2.6);
-  ctx.fillStyle = "#a5734a";
-  roundRect(-11, -8, 22, 14, 6); ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.arc(11, -6, 7, 0, 7); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = "#8a5e3b";
-  ctx.beginPath(); ctx.ellipse(8, -12, 3.5, 7, -0.4, 0, 7); ctx.fill(); ctx.stroke();
-  ctx.restore();
+    ctx.save(); ctx.translate(-56, 12 + bob);
+    ink(2.6);
+    // 牵绳：从园丁手边斜拉到狗脖子
+    ctx.strokeStyle = "#6b5b4a"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(24, -10); ctx.quadraticCurveTo(14, 2, 8, -4); ctx.stroke();
+    // 腿
+    ctx.strokeStyle = "#3a2f26"; ctx.lineWidth = 2.4; ctx.lineCap = "round";
+    for (const lx of [-8, -3, 6, 11]) {
+      ctx.beginPath(); ctx.moveTo(lx, 6);
+      ctx.lineTo(lx + (lx < 0 ? -1.5 : 1.5), 12 + (lx % 2 ? bob : -bob)); ctx.stroke();
+    }
+    // 身子 + 尾巴
+    ctx.fillStyle = "#a5734a";
+    roundRect(-11, -7, 22, 13, 6); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-11, -2);
+    ctx.quadraticCurveTo(-19, -8 + bob, -16, -12 + bob); ctx.stroke();
+    // 头 + 耳朵 + 鼻尖
+    ctx.beginPath(); ctx.arc(12, -6, 7, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#8a5e3b";
+    ctx.beginPath(); ctx.moveTo(8, -12); ctx.lineTo(9, -19); ctx.lineTo(14, -13); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#3a2f26";
+    ctx.beginPath(); ctx.arc(19, -6, 1.8, 0, 7); ctx.fill();
+    ctx.restore();
   }
-  // 园丁
+  // 园丁：比主角深一号的土褐，戴草帽，站得直
   ink(3);
-  ctx.fillStyle = "#6b5b4a";
+  ctx.fillStyle = "#5a4a3a";
   roundRect(-13, -8, 26, 26, 9); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = "#f0cfa9";
+  ctx.fillStyle = "#e8c49c";
   ctx.beginPath(); ctx.arc(0, -16, 9, 0, 7); ctx.fill(); ctx.stroke();
   ctx.fillStyle = "#cbb277";
   ctx.beginPath(); ctx.moveTo(-17, -18); ctx.quadraticCurveTo(0, -30, 17, -18);
   ctx.quadraticCurveTo(0, -14, -17, -18); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#8a7448";                 // 帽箍，跟主角的帽子区分开
+  ctx.fillRect(-11, -20, 22, 3.4);
+  ctx.strokeStyle = "#3a2f26"; ctx.lineWidth = 2;   // 手里的竹竿
+  ctx.beginPath(); ctx.moveTo(13, -4); ctx.lineTo(22, 16); ctx.stroke();
 }
 
 function drawChase() {
@@ -1278,7 +1344,6 @@ function update(dt) {
         G.chase.stuck = true;
         G.stall = CFG.stallBase + CFG.stallGrow * Math.max(0, G.t - CFG.chaseStart);
         toast("园丁被篱笆卡住了！");
-        G.fx.push({ x: gt.x, y: gt.y + 30, txt: "卡住", life: 1.2, color: "#3a6e4a" });
         beep(300, 0.2, "triangle", 0.07, 180);
       }
       if (G.chase.stuck) {
