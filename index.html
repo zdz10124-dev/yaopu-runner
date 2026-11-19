@@ -170,12 +170,16 @@ const CFG = {
   itemGap: 210,           // 两个物件之间至少隔多少像素
   gateEvery: 11,          // 窄口多久出现一次
   gateGap: 340,           // 窄口前后至少隔多少像素（比普通物件更宽）
-  chaseStart: 58,         // 第几秒放狗
+  chaseStart: 46,         // 第几秒放狗
   catchTime: 100,         // 第几秒一定会被追上（固定，不受窄口影响）
-  chaseMaxUp: -220,       // 被甩开时最多退到多高
+  chaseInY: 0.145,        // 放狗时园丁进场的高度（屏幕高占比，HUD 下方，一进来就看得见）
+  chaseRush: 0.70,        // 追击进度到多少后他才真的开始逼近（之前只是压在上方）
+  chaseBump: 3,           // 站着时的小幅晃动（像素），免得看着像静止贴图
+  chaseMaxUp: 0.10,       // 被甩开时最多退到屏幕高度这个比例处（不会退进 HUD 里）
   stallBase: 1.2,         // 窄口第一次卡住园丁的时长（秒）
   stallGrow: 0.02,        // 每过一秒，卡住时长再加这么多（越到后期卡得越久）
-  stallPush: 55,          // 卡住时把园丁往回推多少像素（刚好退出半个身位，不飞出屏幕）
+  stallPush: 42,          // 卡住时把园丁往回推多少像素（刚好退到画面最上沿，不飞出屏幕）
+  stallRecover: 34,       // 被他挣脱回来的速度（像素/秒），推出去多远都会平滑收回
   pxPerMeter: 0.040,      // 多少屏幕高算 1 米
   lanes: 5,               // 生成时对齐的列数
 };
@@ -185,9 +189,9 @@ const CFG = {
       —— 按 400px/s 算就是 0.85 秒反应时间，足够侧移一次；
    2) 窄口净宽 84px 起步：玩家碰撞半径 16.8px + 篱笆 26px，
       实际可站窗口 = 84/2 + 26 - 42.8 ≈ ±29px，永远过得去；
-   3) 园丁按时间线性推进，第 catchTime 秒追上，与窄口触发次数无关
-      —— 所以窄口只影响画面（卡住时长随秒数增长），不会造成必然失败，
-         也不会让玩家无限续命。
+   3) 园丁按时间推进：第 chaseStart 秒进场（落地就在画面里），第 catchTime 秒追上，
+      与窄口触发次数无关 —— 窄口只让他暂时落后（画面可见），不会造成必然失败，
+      也不会让玩家无限续命。
 */
 
 const HERBS = [
@@ -445,7 +449,7 @@ const G = {
   objs: [],             // 地上物件 {x,y,type,...}
   fx: [],               // 飘字
   player: { x: 0, y: 0, dir: 0, r: 24, phase: 0 },
-  chase: { on: false, y: -200, x: 0, dogPhase: 0, xLocked: false, xTarget: 0, pending: 0 },
+  chase: { on: false, y: -200, y0: -200, x: 0, dogPhase: 0, xLocked: false, xTarget: 0, pending: 0, push: 0 },
   warned: false,
   fps: 60,
 };
@@ -945,7 +949,7 @@ function start(mode) {
   G.spawnBoostT = CFG.boostEvery; G.spawnGateT = CFG.gateEvery + 6;
   G.obstacleGapLeft = 0;
   G.objs.length = 0; G.fx.length = 0;
-  G.chase = { on: false, y: -160, x: ST.w / 2, dogPhase: 0, xLocked: false, xTarget: 0, pending: 0 };
+  G.chase = { on: false, y: -160, y0: -160, x: ST.w / 2, dogPhase: 0, xLocked: false, xTarget: 0, pending: 0, push: 0 };
   G.warned = false;
   G.player.x = ST.w / 2; G.player.dir = 0; G.player.y = Math.round(H * 0.30);
   document.getElementById("menu").classList.add("hidden");
@@ -1243,25 +1247,36 @@ function update(dt) {
   // 追兵
   if (G.mode === "challenge") {
     if (!G.chase.on && G.t >= CFG.chaseStart) {
-      G.chase.on = true; G.chase.y = -150; G.chase.x = P.x; sfx.bark();
+      G.chase.on = true;
+      // 进场就看得见：落在 HUD 下沿、玩家上方，不是躲到屏幕外面
+      G.chase.y0 = Math.round(H * CFG.chaseInY);
+      G.chase.y = G.chase.y0; G.chase.x = P.x; G.chase.push = 0; sfx.bark();
       toast("园丁放狗了！快跑");
     }
     if (G.chase.on) {
       // 进度按时间线性推进，所以「第 catchTime 秒被追上」是固定的：
-      // 窄口只会让他暂时落后（画面可见），之后自动加速补回来，不改变判定时间。
+      // 窄口只会让他暂时落后（画面可见），之后自动补回来，不改变判定时间。
       const prog = clamp((G.t - CFG.chaseStart) / (CFG.catchTime - CFG.chaseStart), 0, 1);
-      const targetY = lerp(-150, P.y - 18, prog);
+      // 前 70% 时间他压在上方跟着跑，最后一段才加速逼近（k^4，收尾很凶）
+      const k = clamp((prog - CFG.chaseRush) / (1 - CFG.chaseRush), 0, 1);
+      const targetY = lerp(G.chase.y0, P.y - 18, k * k * k * k)
+        + Math.sin(G.t * 5.2) * CFG.chaseBump;
       if (G.stall <= 0) {
-        const dy = targetY - G.chase.y;
+        const dy = targetY - G.chase.push - G.chase.y;
         const step = Math.max(H * 0.12, Math.abs(dy) * 3) * dt;   // 落后越多追得越快
         G.chase.y += clamp(dy, -step, step);
+      }
+      G.chase.y = Math.max(H * CFG.chaseMaxUp, G.chase.y);   // 别退进 HUD 里
+      // 被窄口推出去的那一段平滑收回，不是瞬间弹回
+      if (G.chase.push > 0 && G.stall <= 0) {
+        G.chase.push = Math.max(0, G.chase.push - CFG.stallRecover * dt);
       }
       // 触发时效：卡住期间不会重复触发
       if (G.chase.pending > 0) {
         G.chase.pending -= dt;
         if (G.chase.pending <= 0) {
           G.stall = CFG.stallBase + CFG.stallGrow * Math.max(0, G.t - CFG.chaseStart);
-          G.chase.y = Math.max(CFG.chaseMaxUp, G.chase.y - CFG.stallPush);
+          G.chase.push = CFG.stallPush;
           toast("园丁被篱笆卡住了！");
           G.fx.push({ x: G.chase.x, y: G.chase.y - 20, txt: "卡住", life: 1.1, color: "#3a6e4a" });
           beep(300, 0.2, "triangle", 0.07, 180);
