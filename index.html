@@ -74,6 +74,7 @@
     border-left:3.5px solid #4a5a44;border-bottom:3.5px solid #4a5a44;
     transform:rotate(45deg) translate(2px,-2px)}
   #padR span::before{transform:rotate(-135deg) translate(2px,-2px)}
+  .pad:active{transform:translateY(-50%)}          /* 抵消全局 button:active 的位移 */
   .pad:active span{background:rgba(249,246,239,.9);transform:scale(.94)}
   #padL{left:2px} #padR{right:2px}
   #toast{position:fixed;left:50%;top:16%;transform:translateX(-50%) rotate(-1.2deg);
@@ -166,8 +167,9 @@ const CFG = {
   herbEveryMin: 0.38,
   rockEvery: 1.95,        // 障碍生成间隔（秒）
   rockEveryMin: 1.05,
-  boostEvery: 9.5,        // 「健步散」多久出现一次
+  itemGap: 210,           // 两个物件之间至少隔多少像素
   gateEvery: 11,          // 窄口多久出现一次
+  gateGap: 340,           // 窄口前后至少隔多少像素（比普通物件更宽）
   chaseStart: 58,         // 第几秒放狗
   chaseSpeed: 1.012,      // 狗自己的速度 = 玩家基础速度 × 这个（与加速无关）
   chaseRamp: 0.0022,      // 狗每秒再凶一点
@@ -424,6 +426,7 @@ const G = {
   stall: 0,             // 园丁被卡住的剩余时间
   spawnBoostT: 0,
   spawnGateT: 0,
+  obstacleGapLeft: 0, // 障碍物间距余量（像素）
   inv: 0,
   slowT: 0,
   shake: 0,
@@ -930,6 +933,7 @@ function start(mode) {
   G.boostT = 0; G.inv = 0; G.slowT = 0; G.shake = 0; G.stall = 0;
   G.spawnHerbT = 0.5; G.spawnRockT = 1.4;
   G.spawnBoostT = CFG.boostEvery; G.spawnGateT = CFG.gateEvery + 6;
+  G.obstacleGapLeft = 0;
   G.objs.length = 0; G.fx.length = 0;
   G.chase = { on: false, y: -160, x: ST.w / 2, dogPhase: 0 };
   G.warned = false;
@@ -1130,7 +1134,10 @@ function update(dt) {
       CFG.playPad, ST.w - CFG.playPad);
   }
 
-  // 生成
+  // 生成：障碍物之间强制留出垂直间距（按世界距离算），
+  // 否则篱笆后面 0.2 秒就能跟一块石头，玩家没有反应空间。
+  // 药材和健步散不参与这个限制，否则场面会变空。
+  G.obstacleGapLeft = Math.max(0, G.obstacleGapLeft - sp * dt);
   G.spawnHerbT -= dt;
   G.spawnRockT -= dt;
   G.spawnBoostT -= dt;
@@ -1138,9 +1145,15 @@ function update(dt) {
   const hEvery = Math.max(CFG.herbEveryMin, CFG.herbEvery - G.t * 0.004);
   const rEvery = Math.max(CFG.rockEveryMin, CFG.rockEvery - G.t * 0.008);
   if (G.spawnHerbT <= 0) { spawnHerb(); G.spawnHerbT = hEvery * rand(0.8, 1.2); }
-  if (G.spawnRockT <= 0) { spawnRock(); G.spawnRockT = rEvery * rand(0.85, 1.15); }
   if (G.spawnBoostT <= 0) { spawnBoost(); G.spawnBoostT = CFG.boostEvery * rand(0.85, 1.25); }
-  if (G.spawnGateT <= 0) { spawnGate(); G.spawnGateT = CFG.gateEvery * rand(0.9, 1.2); }
+  if (G.spawnRockT <= 0 && G.obstacleGapLeft <= 0) {
+    spawnRock(); G.spawnRockT = rEvery * rand(0.85, 1.15);
+    G.obstacleGapLeft = CFG.itemGap;
+  }
+  if (G.spawnGateT <= 0 && G.obstacleGapLeft <= 0) {
+    spawnGate(); G.spawnGateT = CFG.gateEvery * rand(0.9, 1.2);
+    G.obstacleGapLeft = CFG.gateGap;      // 窄口前后留更大的空档
+  }
 
   // 物件移动与碰撞
   const P = G.player;
@@ -1156,9 +1169,9 @@ function update(dt) {
       // 从缝里钻过去 → 园丁被卡一下
       if (!o.passed && o.y <= P.y && o.y > P.y - 60) {
         o.passed = true;
-        if (inGap) {
+        if (inGap && G.chase.on) {          // 园丁还没出来时，钻这个口子没有任何意义
           G.stall = CFG.stallTime;
-          if (G.chase.on) G.chase.y = Math.max(CFG.chaseMaxUp, G.chase.y - CFG.stallPush);
+          G.chase.y = Math.max(CFG.chaseMaxUp, G.chase.y - CFG.stallPush);
           toast("园丁被篱笆卡住了！");
           G.fx.push({ x: P.x, y: P.y - 30, txt: "卡住了", life: 1.1, color: "#3a6e4a" });
           beep(300, 0.2, "triangle", 0.07, 180);
@@ -1396,6 +1409,10 @@ requestAnimationFrame(t => { last = t; loop(t); });
 </script>
 </body>
 </html>
+
+
+
+
 
 
 
