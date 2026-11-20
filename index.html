@@ -98,7 +98,7 @@
 
 <div id="menu" class="screen">
   <div class="poster">
-    <p class="kicker">中国农业大学 · 东区试验田 · 元旦晚会</p>
+    <p class="kicker">农学院 2027 年元旦晚会</p>
     <h1>药圃跑酷</h1>
     <div class="poster-row">
       <canvas id="hero" width="380" height="520"></canvas>
@@ -112,8 +112,8 @@
     </div>
     <p class="tips">赶在霜冻前把药收完——别踩了师兄的样方</p>
     <p class="kbhint">电脑：← → 或 A / D 转向，M 静音</p>
-    <p class="credit">第 3 摊 · 12.31　BGM：Chinese Chickens（CC-BY 3.0）</p>
-    <div class="stamp">第三摊<br>药圃</div>
+    
+    <div class="stamp">第三景</div>
   </div>
 </div>
 
@@ -126,7 +126,7 @@
     <div>距离 <b id="rDist">0</b> m　·　药材 <b id="rHerb">0</b> 株</div>
     <div id="rBest">本机最高 0</div>
   </div>
-  <p class="claim">达标请去 <b>3 号摊</b> 兑奖 · 截图给摊主看</p>
+  <p class="claim">请把游戏截图上传 <b>WPS 表单</b></p>
   <div class="btns">
     <button class="main" id="again">再来一次</button>
     <button class="ghost" id="toMenu">回首页</button>
@@ -148,7 +148,7 @@
 
 const CFG = {
   threshold: 2027,        // 抽奖门槛分（总分 = 米数 + 药材分）
-  lives: 4,               // 挑战模式命数
+  lives: 3,               // 挑战模式命数
   livesEndless: 6,        // 无尽模式命数
   boostTime: 2.6,         // 吃到「健步散」后的加速时长（秒）
   boostMul: 1.45,         // 加速时的速度倍率
@@ -161,10 +161,13 @@ const CFG = {
   speedStep: 0.045,       // 每 speedEvery 秒 +4.5%
   speedEvery: 12,
   speedCap: 1.30,
+  powerEvery: 13,         // 特殊道具（CAB / 农）生成间隔（秒）
+  cabTime: 2.0,           // CAB：无敌冲刺时长（秒）
+  cabMul: 1.55,           // CAB：冲刺期间的速度倍率
   herbEvery: 0.58,        // 药材生成间隔（秒）
   herbEveryMin: 0.38,
   rockEvery: 1.95,        // 障碍生成间隔（秒）
-  rockEveryMin: 1.05,
+  rockEveryMin: 0.86,
   itemGap: 210,           // 两个物件之间至少隔多少像素
   gateEvery: 11,          // 窄口多久出现一次
   gateGap: 340,           // 窄口前后至少隔多少像素（比普通物件更宽）
@@ -433,8 +436,12 @@ const G = {
   meters: 0,
   herbs: 0,
   herbPts: 0,
-  lives: 4,
+  lives: 3,
   boostT: 0,
+  cabT: 0,              // CAB 无敌冲刺剩余时间
+  shield: false,        // 农：护盾（免疫一次伤害）
+  powerN: 0,            // 特殊道具轮换计数
+  spawnPowerT: 0,
   stall: 0,             // 园丁被卡住的剩余时间
   spawnBoostT: 0,
   spawnGateT: 0,
@@ -701,7 +708,27 @@ function drawPlayer() {
       ctx.stroke();
     }
   }
+  // CAB 冲刺：蓝色多道残影
+  if (G.cabT > 0) {
+    ctx.strokeStyle = "rgba(45,108,181,.5)"; ctx.lineWidth = 4;
+    for (let i = -1; i <= 1; i += 2) {
+      ctx.beginPath();
+      ctx.moveTo(i * 14, -20); ctx.lineTo(i * 22, -46 - Math.random() * 14);
+      ctx.stroke();
+    }
+  }
   ctx.restore();
+  // 护盾：脚下一圈金色圆环，一直在转
+  if (G.shield) {
+    ctx.save();
+    ctx.translate(G.player.x, G.player.y + 18);
+    ctx.strokeStyle = "rgba(184,134,11,.85)"; ctx.lineWidth = 3;
+    ctx.setLineDash([9, 7]);
+    ctx.lineDashOffset = -G.t * 40;
+    ctx.beginPath(); ctx.ellipse(0, 0, 30, 11, 0, 0, 7); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
 }
 
 /* ---------- 药材 ---------- */
@@ -937,11 +964,14 @@ function drawHUD() {
   ctx.fillStyle = INK;
   ctx.fillText(Math.floor(G.meters) + " m", ST.w / 2, top + 18);
 
-  // 距离下方：门槛进度（轨道与填充同高同圆角）
+  // 距离下方：实时总分 + 门槛进度（总分 = 米数 + 药材分）
+  const sc = Math.floor(G.meters) + G.herbPts;
   if (G.mode === "challenge") {
-    const sc = Math.floor(G.meters) + G.herbPts;
+    ctx.font = "700 15px system-ui,sans-serif"; ctx.textAlign = "center";
+    ctx.fillStyle = sc >= CFG.threshold ? "#3a6e4a" : INK;
+    ctx.fillText("总分 " + sc, ST.w / 2, top + 40);
     const prog = clamp(sc / CFG.threshold, 0, 1);
-    const bw = 100, bh = 6, bx = ST.w / 2 - bw / 2, by = top + 28;
+    const bw = 100, bh = 5, bx = ST.w / 2 - bw / 2, by = top + 49;
     ctx.fillStyle = "rgba(44,52,46,.14)"; roundRect(bx, by, bw, bh, bh / 2); ctx.fill();
     if (prog > 0) {
       ctx.fillStyle = prog >= 1 ? "#3a6e4a" : "#c0662a";
@@ -949,15 +979,22 @@ function drawHUD() {
     }
   }
 
-  // 第二行：药材数（左）／加速状态（右）
+  // 第二行：药材数（左）／当前增益（右）
   ctx.textAlign = "left";
   ctx.font = "600 13.5px system-ui,sans-serif";
   ctx.fillStyle = "#3a6e4a";
-  ctx.fillText("药材 " + G.herbs, 24, top + 56);
-  if (G.boostT > 0) {
+  ctx.fillText("药材 " + G.herbs, 24, top + 64);
+  const badges = [];
+  if (G.cabT > 0) badges.push({ t: "CAB " + G.cabT.toFixed(1) + "s", c: "#2d6cb5" });
+  if (G.shield) badges.push({ t: "护盾", c: "#b8860b" });
+  if (G.boostT > 0) badges.push({ t: "加速", c: "#c0662a" });
+  ctx.textAlign = "right";
+  let bx2 = ST.w - 24;
+  for (const b of badges) {
+    ctx.fillStyle = b.c;
     ctx.textAlign = "right";
-    ctx.fillStyle = "#c0662a";
-    ctx.fillText("加速中", ST.w - 24, top + 56);
+    ctx.fillText(b.t, bx2, top + 64);
+    bx2 -= ctx.measureText(b.t).width + 12;
   }
   if (FPSDBG) {
     ctx.textAlign = "left"; ctx.font = "700 12px system-ui,sans-serif";
@@ -992,6 +1029,12 @@ function spawnBoost() {
   const i = (Math.random() * CFG.lanes) | 0;
   G.objs.push({ type: "boost", x: laneX(i), y: H + 70, r: 26, seed: rand(0, 6) });
 }
+// 特殊道具：CAB（无敌冲刺）和 农（护盾），两种轮换出场
+function spawnPower() {
+  const i = (Math.random() * CFG.lanes) | 0;
+  const kind = (G.powerN++ % 2 === 0) ? "cab" : "nong";
+  G.objs.push({ type: "power", kind, x: laneX(i), y: H + 80, r: 30, seed: rand(0, 6) });
+}
 // 窄口：两段篱笆中间留一道缝，从缝里钻过去能把园丁卡住
 function spawnGate() {
   const gapW = Math.max(84, ST.w * 0.24);
@@ -1018,6 +1061,8 @@ function start(mode) {
   G.t = 0; G.scroll = 0; G.meters = 0; G.herbs = 0; G.herbPts = 0;
   G.lives = mode === "endless" ? CFG.livesEndless : CFG.lives;
   G.boostT = 0; G.inv = 0; G.slowT = 0; G.shake = 0; G.stall = 0;
+  G.cabT = 0; G.shield = false; G.powerN = 0;
+  G.spawnPowerT = CFG.powerEvery * 0.55;
   G.spawnHerbT = 0.5; G.spawnRockT = 1.4;
   G.spawnBoostT = CFG.boostEvery; G.spawnGateT = CFG.gateEvery + 6;
   G.obstacleGapLeft = 0;
@@ -1051,7 +1096,7 @@ function gameOver(caught) {
     v.className = "badge pass"; v.textContent = "无尽模式 · 不计门槛";
   } else if (score >= CFG.threshold) {
     v.className = "badge pass";
-    v.textContent = "达标 " + CFG.threshold + " · 可以抽奖了";
+    v.textContent = "达标 " + CFG.threshold + " · 记得传截图";
   } else {
     v.className = "badge fail";
     v.textContent = "差 " + (CFG.threshold - score) + " 分";
@@ -1108,6 +1153,38 @@ function grantBoost() {
   if (G.state !== "play") return;
   G.boostT = CFG.boostTime;
   sfx.boost();
+}
+
+// 特殊道具：CAB = 无敌冲刺 2 秒；农 = 护盾，顶一次伤害
+function grantPower(kind) {
+  if (G.state !== "play") return;
+  if (kind === "cab") {
+    G.cabT = CFG.cabTime;
+    toast("CAB！两秒无敌，撞开一条路");
+    G.fx.push({ x: G.player.x, y: G.player.y - 30, txt: "无敌 2s", life: 1.1, color: "#2d6cb5" });
+  } else {
+    G.shield = true;
+    toast("农 · 护盾替您挡一次");
+    G.fx.push({ x: G.player.x, y: G.player.y - 30, txt: "护盾", life: 1.1, color: "#b8860b" });
+  }
+  sfx.rare();
+}
+
+// 统一扣血入口：CAB 期间免伤，护盾顶一次，其余正常掉一颗心
+function hurtPlayer() {
+  if (G.cabT > 0) return false;
+  if (G.shield) {
+    G.shield = false;
+    G.inv = CFG.invincible * 0.6;
+    G.shake = 6;
+    G.fx.push({ x: G.player.x, y: G.player.y - 26, txt: "盾挡住", life: 0.9, color: "#b8860b" });
+    beep(520, 0.12, "triangle", 0.06, 300);
+    return false;
+  }
+  G.lives--; G.inv = CFG.invincible; G.slowT = CFG.hurtSlowTime;
+  G.shake = 12; sfx.hit();
+  G.fx.push({ x: G.player.x, y: G.player.y - 20, txt: "-1", life: 0.9, color: "#b03a2e" });
+  return true;
 }
 
 // ---- 左右幽灵按钮 ----
@@ -1213,10 +1290,13 @@ function update(dt) {
   const ramp = Math.min(CFG.speedCap, 1 + CFG.speedStep * Math.floor(G.t / CFG.speedEvery));
   let sp = CFG.baseSpeed * H * ramp;
   if (G.boostT > 0) sp *= CFG.boostMul;
+  if (G.cabT > 0) sp *= CFG.cabMul;
   if (G.slowT > 0) sp *= CFG.hurtSlow;
   G.boostT = Math.max(0, G.boostT - dt);
   G.slowT = Math.max(0, G.slowT - dt);
   G.inv = Math.max(0, G.inv - dt);
+  G.cabT = Math.max(0, G.cabT - dt);
+  if (G.cabT > 0) G.inv = Math.max(G.inv, 0.15);   // 冲刺期间全程免伤
 
   // 位移
   G.scroll = (G.scroll + sp * dt) % TILE_H;   // 防止 Scroll 无限增长
@@ -1242,10 +1322,12 @@ function update(dt) {
   G.spawnRockT -= dt;
   G.spawnBoostT -= dt;
   G.spawnGateT -= dt;
+  G.spawnPowerT -= dt;
   const hEvery = Math.max(CFG.herbEveryMin, CFG.herbEvery - G.t * 0.004);
   const rEvery = Math.max(CFG.rockEveryMin, CFG.rockEvery - G.t * 0.008);
   if (G.spawnHerbT <= 0) { spawnHerb(); G.spawnHerbT = hEvery * rand(0.8, 1.2); }
   if (G.spawnBoostT <= 0) { spawnBoost(); G.spawnBoostT = CFG.boostEvery * rand(0.85, 1.25); }
+  if (G.spawnPowerT <= 0) { spawnPower(); G.spawnPowerT = CFG.powerEvery * rand(0.85, 1.25); }
   if (G.spawnRockT <= 0 && G.obstacleGapLeft <= 0) {
     spawnRock(); G.spawnRockT = rEvery * rand(0.85, 1.15);
     G.obstacleGapLeft = CFG.itemGap;
@@ -1286,10 +1368,7 @@ function update(dt) {
           const dx = seg.x - P.x, dy = o.y - P.y;
           const rr = seg.r + P.r * 0.7;
           if (dx * dx + dy * dy <= rr * rr) {
-            G.lives--; G.inv = CFG.invincible; G.slowT = CFG.hurtSlowTime;
-            G.shake = 12; sfx.hit();
-            G.fx.push({ x: P.x, y: P.y - 20, txt: "-1", life: 0.9, color: "#b03a2e" });
-            if (G.lives <= 0) { gameOver(false); return; }
+            if (hurtPlayer() && G.lives <= 0) { gameOver(false); return; }
             break;
           }
         }
@@ -1310,12 +1389,20 @@ function update(dt) {
       G.fx.push({ x: o.x, y: o.y, txt: "加速", life: 0.9, color: "#d98324" });
       toast("健步散！跑快一点");
       G.objs.splice(i, 1);
+    } else if (o.type === "power") {
+      grantPower(o.kind);
+      G.objs.splice(i, 1);
+    } else if (G.cabT > 0) {
+      // CAB 冲刺期间：障碍直接被撞碎，还给 20 分
+      G.objs.splice(i, 1);
+      G.herbPts += 20;
+      G.shake = 5;
+      G.fx.push({ x: o.x, y: o.y, txt: "撞飞 +20", life: 0.8, color: "#d98324" });
+      beep(180, 0.08, "square", 0.05, 90);
     } else if (G.inv <= 0) {
-      G.lives--; G.inv = CFG.invincible; G.slowT = CFG.hurtSlowTime;
-      G.shake = 12; sfx.hit();
-      G.fx.push({ x: o.x, y: o.y, txt: "-1", life: 0.9, color: "#b03a2e" });
-      if (G.mode === "challenge" && G.lives <= 0) { gameOver(false); return; }
-      if (G.mode === "endless" && G.lives <= 0) { gameOver(false); return; }
+      if (hurtPlayer()) {
+        if (G.lives <= 0) { gameOver(false); return; }
+      }
     }
   }
 
@@ -1428,6 +1515,38 @@ function render() {
         Math.round(o.y + Math.sin(G.t * 3) * 2.5 - half), SPRITE, SPRITE);
       ctx.font = "600 11px system-ui,sans-serif"; ctx.textAlign = "center";
       ctx.fillStyle = "#a0571f"; ctx.fillText("加速", o.x, o.y + 30);
+    } else if (o.type === "power") {
+      // CAB / 农：立体字 + 一直绕竖轴自转
+      const isCab = o.kind === "cab";
+      const spin = G.t * 1.9 + o.seed;
+      // 只用横向压缩模拟绕竖轴转，不要镜像 —— 镜像出来就是反着的"CAB"
+      let face = Math.abs(Math.cos(spin));
+      if (face < 0.5) face = 0.5;          // 别转到侧面成一条缝，字要始终认得出
+      const col = isCab ? "#2d6cb5" : "#b8860b";
+      const colDark = isCab ? "#173f6b" : "#6d5310";
+      ctx.save();
+      ctx.translate(o.x, o.y + Math.sin(G.t * 3) * 2.5);
+      // 地面光斑 + 光环
+      ctx.fillStyle = isCab ? "rgba(45,108,181,.20)" : "rgba(184,134,11,.22)";
+      ctx.beginPath(); ctx.ellipse(0, 18, 26, 9, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = col; ctx.globalAlpha = 0.5; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.ellipse(0, 16, 20 + Math.sin(G.t * 4 + o.seed) * 2.5, 7, 0, 0, 7); ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.scale(face, 1);
+      const txt = isCab ? "CAB" : "农";
+      ctx.font = "900 34px system-ui,'Microsoft YaHei',sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+      // 侧面：一层层往后叠，做出厚度
+      for (let d = 7; d >= 1; d--) {
+        ctx.fillStyle = colDark;
+        ctx.fillText(txt, -d * 0.55, d * 0.85);
+      }
+      ctx.lineWidth = 4; ctx.strokeStyle = "#2c342e";
+      ctx.strokeText(txt, 0, 0);
+      ctx.fillStyle = col; ctx.fillText(txt, 0, 0);
+      ctx.fillStyle = "rgba(255,255,255,.45)";
+      ctx.fillText(txt, -0.8, -0.9);
+      ctx.restore();
     } else if (o.type === "gate") {
       const fs = rockSprite("fence");
       ctx.fillStyle = "rgba(60,80,55,.16)";
