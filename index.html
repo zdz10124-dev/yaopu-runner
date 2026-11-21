@@ -157,7 +157,7 @@ const CFG = {
   hurtSlow: 0.60,         // 撞击后减速倍率
   hurtSlowTime: 0.35,
   invincible: 1.4,        // 撞击后无敌时间
-  baseSpeed: 0.40,        // 基础速度：每秒走过 0.40 个屏幕高（比首版慢约三成）
+  baseSpeed: 0.48,        // 基础速度：每秒走过 0.48 个屏幕高
   speedStep: 0.045,       // 每 speedEvery 秒 +4.5%
   speedEvery: 12,
   speedCap: 1.30,
@@ -176,10 +176,9 @@ const CFG = {
   chaseInY: 0.145,        // 放狗时园丁进场的高度（屏幕高占比，HUD 下方，一进来就看得见）
   chaseRush: 0.70,        // 追击进度到多少后他才真的开始逼近（之前只是压在上方）
   chaseBump: 3,           // 站着时的小幅晃动（像素），免得看着像静止贴图
-  chaseMaxUp: 0.10,       // 被甩开时最多退到屏幕高度这个比例处（不会退进 HUD 里）
+  chasePull: 1.6,         // 园丁被甩开后追回时间表的速度（1/秒）
   stallBase: 1.2,         // 窄口第一次卡住园丁的时长（秒）
   stallGrow: 0.02,        // 每过一秒，卡住时长再加这么多（越到后期卡得越久）
-  recoverSpeed: 0.45,     // 挣脱后从画面上方追回来的速度（屏幕高/秒）
 
   pxPerMeter: 0.040,      // 多少屏幕高算 1 米
   lanes: 5,               // 生成时对齐的列数
@@ -1327,7 +1326,7 @@ function update(dt) {
   const rEvery = Math.max(CFG.rockEveryMin, CFG.rockEvery - G.t * 0.008);
   if (G.spawnHerbT <= 0) { spawnHerb(); G.spawnHerbT = hEvery * rand(0.8, 1.2); }
   if (G.spawnBoostT <= 0) { spawnBoost(); G.spawnBoostT = CFG.boostEvery * rand(0.85, 1.25); }
-  if (G.spawnPowerT <= 0) { spawnPower(); G.spawnPowerT = CFG.powerEvery * rand(0.85, 1.25); }
+  if (G.spawnPowerT <= 0 && G.t < CFG.catchTime - 8) { spawnPower(); G.spawnPowerT = CFG.powerEvery * rand(0.85, 1.25); }
   if (G.spawnRockT <= 0 && G.obstacleGapLeft <= 0) {
     spawnRock(); G.spawnRockT = rEvery * rand(0.85, 1.15);
     G.obstacleGapLeft = CFG.itemGap;
@@ -1410,53 +1409,57 @@ function update(dt) {
   if (G.mode === "challenge") {
     if (!G.chase.on && G.t >= CFG.chaseStart) {
       G.chase.on = true;
-      // 进场就看得见：落在 HUD 下沿、玩家上方，不是躲到屏幕外面
+      // 进场就看得见：落在 HUD 下沿、玩家上方
       G.chase.y0 = Math.round(H * CFG.chaseInY);
-      G.chase.y = G.chase.y0; G.chase.x = P.x; G.chase.push = 0; sfx.bark();
+      G.chase.gap = P.y - G.chase.y0;     // 世界距离：他落在你后面多少像素
+      G.chase.y = G.chase.y0;
+      G.chase.x = P.x; sfx.bark();
       toast("园丁放狗了！快跑");
     }
     if (G.chase.on) {
-      // 进度按时间线性推进，所以「第 catchTime 秒被追上」是固定的：
-      // 窄口只会让他暂时落后（画面可见），之后自动补回来，不改变判定时间。
+      // —— 一律按「世界距离 gap」算，不再按屏幕坐标算 ——
+      //      gap' = 玩家速度 - 园丁速度
+      // 所以玩家吃加速时 gap 变大 → 他在画面上真的往后退；
+      // 玩家被撞减速时 gap 变小 → 他真的贴近。屏幕里看不看得见无所谓。
       const prog = clamp((G.t - CFG.chaseStart) / (CFG.catchTime - CFG.chaseStart), 0, 1);
-      // 前 70% 时间他压在上方跟着跑，最后一段才加速逼近（k^4，收尾很凶）
       const k = clamp((prog - CFG.chaseRush) / (1 - CFG.chaseRush), 0, 1);
-      const targetY = lerp(G.chase.y0, P.y - 18, k * k * k * k)
-        + Math.sin(G.t * 5.2) * CFG.chaseBump;
-      // 时间到点：挣脱一切，直接扑上来（保证"第 catchTime 秒被追上"是死的）
+      const gSched = lerp(P.y - G.chase.y0, 12, k * k * k * k);   // 时间表上的距离
+      const spNom = CFG.baseSpeed * H * ramp;                     // 基准速度（不含加速/减速）
+      const boosting = G.cabT > 0 || G.boostT > 0;
+      // 追赶项：把他拉回时间表。加速期间几乎不拉，让"相对速度"如实体现；
+      // 越到收尾拉得越狠，保证第 catchTime 秒一定贴上。
+      const pullRate = CFG.chasePull * (1 + 4 * k * k) * (boosting ? 0.2 : 1);
+      const rec = clamp((G.chase.gap - gSched) * pullRate, -H * 0.55, H * 0.55);
+      const vg = spNom + rec;                                     // 园丁自己的跑速
+      G.chase.gap += (sp - vg) * dt;
+
+      // 时间到点：挣脱一切（保证"第 catchTime 秒被追上"是死的）
       if (G.t >= CFG.catchTime) { G.chase.stuck = false; G.chase.gate = null; G.stall = 0; }
-      // —— 撞上窄口：那道篱笆滚到园丁脚下时才会真卡住，画面上人就在栅栏处 ——
+
+      // —— 撞上窄口：那道篱笆滚到园丁脚下时才会真卡住 ——
       const gt = G.chase.gate;
-      if (gt && !G.chase.stuck && gt.y <= G.chase.y + 6 && G.t < CFG.catchTime - 4) {
+      const chaseY0 = P.y - G.chase.gap;
+      if (gt && !G.chase.stuck && gt.y <= chaseY0 + 6 && G.t < CFG.catchTime - 4) {
         G.chase.stuck = true;
         G.stall = CFG.stallBase + CFG.stallGrow * Math.max(0, G.t - CFG.chaseStart);
         toast("园丁被篱笆卡住了！");
         beep(300, 0.2, "triangle", 0.07, 180);
       }
       if (G.chase.stuck) {
-        // 挂在栅栏上 = 和栅栏保持相对静止（真·静止，不是屏幕静止）
-        // 场景在往上滚，所以他跟着栅栏一起被甩向画面顶部，正常滚出画面
+        // 挂在栅栏上 = 和栅栏保持相对静止：世界位置被钉死，
+        // 于是 gap 跟场景一起变大（被甩在后面），画面里自然滚出顶部
         const st = ST.w * 1.6 * dt;
         if (gt) {
           G.chase.x += clamp(gt.x - G.chase.x, -st, st);
-          G.chase.y = gt.y - 2;
+          G.chase.gap = P.y - (gt.y - 2);
         }
-        if (G.stall <= 0) {                 // 挣脱：他从画面上方追回来
-          G.chase.stuck = false; G.chase.gate = null; G.chase.recover = 0.7;
-        }
+        if (G.stall <= 0) { G.chase.stuck = false; G.chase.gate = null; }
       } else {
-        const dy = targetY - G.chase.y;
-        // 挣脱后不能瞬移回来：限速，让玩家看见他从画面上方追回来
-        const cap = G.chase.recover > 0 ? H * CFG.recoverSpeed : Infinity;
-        const step = Math.min(Math.max(H * 0.12, Math.abs(dy) * 3), cap) * dt;
-        G.chase.y += clamp(dy, -step, step);
-        // 正常跟随时不许退进 HUD 里（回追途中不管，他本来就在画面外上面）
-        if (G.chase.recover <= 0) G.chase.y = Math.max(H * CFG.chaseMaxUp, G.chase.y);
-        G.chase.recover = Math.max(0, G.chase.recover - dt);
         const st = ST.w * 0.55 * dt;
         G.chase.x += clamp(P.x - G.chase.x, -st, st);
       }
-      if (G.chase.y > P.y - 26) { gameOver(true); return; }
+      G.chase.y = P.y - G.chase.gap + Math.sin(G.t * 5.2) * CFG.chaseBump;
+      if (G.chase.gap < 26 || G.t >= CFG.catchTime) { gameOver(true); return; }
     }
   }
 
@@ -1602,6 +1605,8 @@ const AUTO = new URLSearchParams(location.search).get("auto") === "1";
 const WARP = +(new URLSearchParams(location.search).get("warp") || 0);
 const STAY = new URLSearchParams(location.search).get("stay") === "1";
 const HOLD = new URLSearchParams(location.search).get("hold") === "1";
+// ?cabat=N —— 开发用：第 N 秒强制吃一个 CAB，方便验相对速度
+const CABAT = +(new URLSearchParams(location.search).get("cabat") || 0);
 // ?seed=N —— 开发用：固定随机数，同一 seed 每次跑到同一帧
 const SEED = new URLSearchParams(location.search).get("seed");
 if (SEED) {
@@ -1670,6 +1675,7 @@ if (WARP > 0) {
   start("challenge");
   for (let i = 0; i < WARP * 60 && G.state === "play"; i++) {
     if (AUTO) autoSteer();
+    if (CABAT && G.t >= CABAT && G.cabT <= 0) G.cabT = CFG.cabTime;
     update(1 / 60);
   }
 }
